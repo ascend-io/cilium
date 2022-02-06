@@ -346,6 +346,11 @@ steers traffic to a local DNS node-cache which runs as a normal pod.
              <https://kubernetes.io/docs/tasks/administer-cluster/nodelocaldns/#configuration>`_
              to fill in the required template variables ``__PILLAR__LOCAL__DNS__``, ``__PILLAR__DNS__DOMAIN__``,
              and ``__PILLAR__DNS__SERVER__`` before applying the yaml.
+           * If you use `Custom Stub Domains
+             <https://kubernetes.io/docs/tasks/administer-cluster/dns-custom-nameservers/#configuration-of-stub-domain-and-upstream-nameserver-using-coredns>`_
+             in your cluster, you will need to modify the `-localip` argument in NodeLocal DNSCache from
+             "169.254.20.10,__PILLAR__DNS__SERVER__" to "0.0.0.0",
+             otherwise your cache pods will enter CrashLoopBackoff.
 
         .. parsed-literal::
 
