@@ -9,7 +9,6 @@ import (
 
 	"github.com/cilium/cilium/pkg/comparator"
 	"github.com/cilium/cilium/pkg/k8s"
-	ciliumio "github.com/cilium/cilium/pkg/k8s/apis/cilium.io"
 	"github.com/cilium/cilium/pkg/k8s/informer"
 	"github.com/cilium/cilium/pkg/lock"
 	nodeTypes "github.com/cilium/cilium/pkg/node/types"
@@ -21,6 +20,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
+
+	"github.com/cilium/cilium/pkg/option"
 )
 
 var (
@@ -90,7 +91,7 @@ func (k *K8sWatcher) NodesInit(k8sClient *k8s.K8sClient) {
 // Not Ready Node Taint.
 func hasAgentNotReadyTaint(k8sNode *v1.Node) bool {
 	for _, taint := range k8sNode.Spec.Taints {
-		if taint.Key == ciliumio.AgentNotReadyNodeTaint {
+		if taint.Key == option.Config.AgentNotReadyNodeTaintValue() {
 			return true
 		}
 	}
