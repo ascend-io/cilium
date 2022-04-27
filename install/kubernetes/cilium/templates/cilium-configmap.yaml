@@ -880,3 +880,5 @@ data:
   {{ toYaml .Values.extraConfig | nindent 2 }}
 {{- end }}
 {{- end }}
+
+  agent-not-ready-taint-key: {{ .Values.agentNotReadyTaintKey }}

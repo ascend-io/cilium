@@ -2020,3 +2020,8 @@ enableK8sTerminatingEndpoint: true
 
 # -- Configure whether to unload DNS policy rules on graceful shutdown
 # dnsPolicyUnloadOnShutdown: false
+
+# -- Configure cilium agent not ready taint key
+# When set to `ignore-taint.cluster-autoscaler.kubernetes.io/cilium-agent-not-ready`, the CA will ignore the taint
+# when simulating scheduling, allowing you to scale up from zero.
+agentNotReadyTaintKey: "node.cilium.io/agent-not-ready"
