@@ -25,6 +25,7 @@ import (
 	"github.com/cilium/cilium/pkg/datapath"
 	"github.com/cilium/cilium/pkg/egressgateway"
 	"github.com/cilium/cilium/pkg/endpoint"
+	"github.com/cilium/cilium/pkg/envoy"
 	"github.com/cilium/cilium/pkg/ip"
 	"github.com/cilium/cilium/pkg/ipcache"
 	"github.com/cilium/cilium/pkg/k8s"
@@ -49,24 +50,27 @@ import (
 	"github.com/cilium/cilium/pkg/policy"
 	"github.com/cilium/cilium/pkg/policy/api"
 	"github.com/cilium/cilium/pkg/redirectpolicy"
+	"github.com/cilium/cilium/pkg/service"
 )
 
 const (
-	k8sAPIGroupNodeV1Core                       = "core/v1::Node"
-	k8sAPIGroupNamespaceV1Core                  = "core/v1::Namespace"
-	K8sAPIGroupServiceV1Core                    = "core/v1::Service"
-	K8sAPIGroupEndpointV1Core                   = "core/v1::Endpoint"
-	K8sAPIGroupPodV1Core                        = "core/v1::Pods"
-	k8sAPIGroupNetworkingV1Core                 = "networking.k8s.io/v1::NetworkPolicy"
-	k8sAPIGroupCiliumNetworkPolicyV2            = "cilium/v2::CiliumNetworkPolicy"
-	k8sAPIGroupCiliumClusterwideNetworkPolicyV2 = "cilium/v2::CiliumClusterwideNetworkPolicy"
-	k8sAPIGroupCiliumNodeV2                     = "cilium/v2::CiliumNode"
-	k8sAPIGroupCiliumEndpointV2                 = "cilium/v2::CiliumEndpoint"
-	k8sAPIGroupCiliumLocalRedirectPolicyV2      = "cilium/v2::CiliumLocalRedirectPolicy"
-	k8sAPIGroupCiliumEgressNATPolicyV2          = "cilium/v2::CiliumEgressNATPolicy"
-	k8sAPIGroupCiliumEndpointSliceV2Alpha1      = "cilium/v2alpha1::CiliumEndpointSlice"
-	K8sAPIGroupEndpointSliceV1Beta1Discovery    = "discovery/v1beta1::EndpointSlice"
-	K8sAPIGroupEndpointSliceV1Discovery         = "discovery/v1::EndpointSlice"
+	k8sAPIGroupNodeV1Core                           = "core/v1::Node"
+	k8sAPIGroupNamespaceV1Core                      = "core/v1::Namespace"
+	K8sAPIGroupServiceV1Core                        = "core/v1::Service"
+	K8sAPIGroupEndpointV1Core                       = "core/v1::Endpoint"
+	K8sAPIGroupPodV1Core                            = "core/v1::Pods"
+	k8sAPIGroupNetworkingV1Core                     = "networking.k8s.io/v1::NetworkPolicy"
+	k8sAPIGroupCiliumNetworkPolicyV2                = "cilium/v2::CiliumNetworkPolicy"
+	k8sAPIGroupCiliumClusterwideNetworkPolicyV2     = "cilium/v2::CiliumClusterwideNetworkPolicy"
+	k8sAPIGroupCiliumNodeV2                         = "cilium/v2::CiliumNode"
+	k8sAPIGroupCiliumEndpointV2                     = "cilium/v2::CiliumEndpoint"
+	k8sAPIGroupCiliumLocalRedirectPolicyV2          = "cilium/v2::CiliumLocalRedirectPolicy"
+	k8sAPIGroupCiliumEgressNATPolicyV2              = "cilium/v2::CiliumEgressNATPolicy"
+	k8sAPIGroupCiliumEndpointSliceV2Alpha1          = "cilium/v2alpha1::CiliumEndpointSlice"
+	k8sAPIGroupCiliumClusterwideEnvoyConfigV2Alpha1 = "cilium/v2alpha1::CiliumClusterwideEnvoyConfig"
+	k8sAPIGroupCiliumEnvoyConfigV2Alpha1            = "cilium/v2alpha1::CiliumEnvoyConfig"
+	K8sAPIGroupEndpointSliceV1Beta1Discovery        = "discovery/v1beta1::EndpointSlice"
+	K8sAPIGroupEndpointSliceV1Discovery             = "discovery/v1::EndpointSlice"
 
 	metricCNP            = "CiliumNetworkPolicy"
 	metricCCNP           = "CiliumClusterwideNetworkPolicy"
@@ -78,6 +82,8 @@ const (
 	metricCiliumEndpoint = "CiliumEndpoint"
 	metricCLRP           = "CiliumLocalRedirectPolicy"
 	metricCENP           = "CiliumEgressNATPolicy"
+	metricCCEC           = "CiliumClusterwideEnvoyConfig"
+	metricCEC            = "CiliumEnvoyConfig"
 	metricPod            = "Pod"
 	metricNode           = "Node"
 	metricService        = "Service"
@@ -139,6 +145,9 @@ type policyRepository interface {
 type svcManager interface {
 	DeleteService(frontend loadbalancer.L3n4Addr) (bool, error)
 	UpsertService(*loadbalancer.SVC) (bool, loadbalancer.ID, error)
+	RegisterL7LBService(serviceName, resourceName service.Name, proxyPort uint16) error
+	RegisterL7LBServiceBackendSync(serviceName, resourceName service.Name) error
+	RemoveL7LBService(serviceName, resourceName service.Name) error
 }
 
 type redirectPolicyManager interface {
@@ -164,6 +173,19 @@ type egressGatewayManager interface {
 	OnDeleteEgressPolicy(configID types.NamespacedName)
 	OnUpdateEndpoint(endpoint *k8sTypes.CiliumEndpoint)
 	OnDeleteEndpoint(endpoint *k8sTypes.CiliumEndpoint)
+	OnUpdateNode(node nodeTypes.Node)
+	OnDeleteNode(node nodeTypes.Node)
+}
+
+type envoyConfigManager interface {
+	UpsertEnvoyResources(context.Context, envoy.Resources, envoy.PortAllocator) error
+	UpdateEnvoyResources(ctx context.Context, old, new envoy.Resources, portAllocator envoy.PortAllocator) error
+	DeleteEnvoyResources(context.Context, envoy.Resources, envoy.PortAllocator) error
+
+	// envoy.PortAllocator
+	AllocateProxyPort(name string, ingress bool) (uint16, error)
+	AckProxyPort(name string) error
+	ReleaseProxyPort(name string) error
 }
 
 type K8sWatcher struct {
@@ -203,6 +225,7 @@ type K8sWatcher struct {
 	bgpSpeakerManager     bgpSpeakerManager
 	egressGatewayManager  egressGatewayManager
 	ipcache               *ipcache.IPCache
+	envoyConfigManager    envoyConfigManager
 
 	// controllersStarted is a channel that is closed when all controllers, i.e.,
 	// k8s watchers have started listening for k8s events.
@@ -240,6 +263,7 @@ func NewK8sWatcher(
 	redirectPolicyManager redirectPolicyManager,
 	bgpSpeakerManager bgpSpeakerManager,
 	egressGatewayManager egressGatewayManager,
+	envoyConfigManager envoyConfigManager,
 	cfg WatcherConfiguration,
 	ipcache *ipcache.IPCache,
 ) *K8sWatcher {
@@ -260,6 +284,7 @@ func NewK8sWatcher(
 		egressGatewayManager:  egressGatewayManager,
 		NodeChain:             subscriber.NewNodeChain(),
 		CiliumNodeChain:       subscriber.NewCiliumNodeChain(),
+		envoyConfigManager:    envoyConfigManager,
 		cfg:                   cfg,
 	}
 }
@@ -349,15 +374,19 @@ func (k *K8sWatcher) resourceGroups() []string {
 	k8sGroups = append(k8sGroups, K8sAPIGroupEndpointV1Core)
 
 	resourceToGroupMapping := map[string]string{
-		synced.CRDResourceName(v2.CNPName):        k8sAPIGroupCiliumNetworkPolicyV2,
-		synced.CRDResourceName(v2.CCNPName):       k8sAPIGroupCiliumClusterwideNetworkPolicyV2,
-		synced.CRDResourceName(v2.CEPName):        k8sAPIGroupCiliumEndpointV2, // ipcache
-		synced.CRDResourceName(v2.CNName):         k8sAPIGroupCiliumNodeV2,
-		synced.CRDResourceName(v2.CIDName):        "SKIP", // Handled in pkg/k8s/identitybackend/
-		synced.CRDResourceName(v2.CLRPName):       k8sAPIGroupCiliumLocalRedirectPolicyV2,
-		synced.CRDResourceName(v2.CEWName):        "SKIP", // Handled in clustermesh-apiserver/
-		synced.CRDResourceName(v2alpha1.CENPName): k8sAPIGroupCiliumEgressNATPolicyV2,
-		synced.CRDResourceName(v2alpha1.CESName):  k8sAPIGroupCiliumEndpointSliceV2Alpha1,
+		synced.CRDResourceName(v2.CNPName):           k8sAPIGroupCiliumNetworkPolicyV2,
+		synced.CRDResourceName(v2.CCNPName):          k8sAPIGroupCiliumClusterwideNetworkPolicyV2,
+		synced.CRDResourceName(v2.CEPName):           k8sAPIGroupCiliumEndpointV2, // ipcache
+		synced.CRDResourceName(v2.CNName):            k8sAPIGroupCiliumNodeV2,
+		synced.CRDResourceName(v2.CIDName):           "SKIP", // Handled in pkg/k8s/identitybackend/
+		synced.CRDResourceName(v2.CLRPName):          k8sAPIGroupCiliumLocalRedirectPolicyV2,
+		synced.CRDResourceName(v2.CEWName):           "SKIP", // Handled in clustermesh-apiserver/
+		synced.CRDResourceName(v2alpha1.CENPName):    k8sAPIGroupCiliumEgressNATPolicyV2,
+		synced.CRDResourceName(v2alpha1.CESName):     k8sAPIGroupCiliumEndpointSliceV2Alpha1,
+		synced.CRDResourceName(v2alpha1.CCECName):    k8sAPIGroupCiliumClusterwideEnvoyConfigV2Alpha1,
+		synced.CRDResourceName(v2alpha1.CECName):     k8sAPIGroupCiliumEnvoyConfigV2Alpha1,
+		synced.CRDResourceName(v2alpha1.BGPPName):    "SKIP", // Handled in BGP control plane
+		synced.CRDResourceName(v2alpha1.BGPPoolName): "SKIP", // Handled in BGP control plane
 	}
 	ciliumResources := synced.AgentCRDResourceNames()
 	ciliumGroups := make([]string, 0, len(ciliumResources))
@@ -473,6 +502,10 @@ func (k *K8sWatcher) EnableK8sWatcher(ctx context.Context, resources []string) e
 			k.ciliumLocalRedirectPolicyInit(ciliumNPClient)
 		case k8sAPIGroupCiliumEgressNATPolicyV2:
 			k.ciliumEgressNATPolicyInit(ciliumNPClient)
+		case k8sAPIGroupCiliumClusterwideEnvoyConfigV2Alpha1:
+			k.ciliumClusterwideEnvoyConfigInit(ciliumNPClient)
+		case k8sAPIGroupCiliumEnvoyConfigV2Alpha1:
+			k.ciliumEnvoyConfigInit(ciliumNPClient)
 		default:
 			log.WithFields(logrus.Fields{
 				logfields.Resource: r,
@@ -652,13 +685,17 @@ func genCartesianProduct(
 			parsedIP := net.ParseIP(netIP)
 
 			if backendPort := backend.Ports[string(fePortName)]; backendPort != nil && feFamilyIPv6 == ip.IsIPv6(parsedIP) {
+				backendState := loadbalancer.BackendStateActive
+				if backend.Terminating {
+					backendState = loadbalancer.BackendStateTerminating
+				}
 				besValues = append(besValues, loadbalancer.Backend{
 					NodeName: backend.NodeName,
 					L3n4Addr: loadbalancer.L3n4Addr{
 						IP:     parsedIP,
 						L4Addr: *backendPort,
 					},
-					Terminating: backend.Terminating,
+					State: backendState,
 				})
 			}
 		}

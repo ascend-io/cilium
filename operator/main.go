@@ -3,7 +3,7 @@
 
 // Ensure build fails on versions of Go that are not supported by Cilium.
 // This build tag should be kept in sync with the version specified in go.mod.
-//go:build go1.17
+//go:build go1.18
 
 package main
 
@@ -33,6 +33,7 @@ import (
 	operatorMetrics "github.com/cilium/cilium/operator/metrics"
 	operatorOption "github.com/cilium/cilium/operator/option"
 	ces "github.com/cilium/cilium/operator/pkg/ciliumendpointslice"
+	"github.com/cilium/cilium/operator/pkg/ingress"
 	operatorWatchers "github.com/cilium/cilium/operator/watchers"
 	"github.com/cilium/cilium/pkg/components"
 	"github.com/cilium/cilium/pkg/ipam/allocator"
@@ -368,6 +369,8 @@ func onOperatorStartLeading(ctx context.Context) {
 	// Restart kube-dns as soon as possible since it helps etcd-operator to be
 	// properly setup. If kube-dns is not managed by Cilium it can prevent
 	// etcd from reaching out kube-dns in EKS.
+	// If this logic is modified, make sure the operator's clusterrole logic for
+	// pods/delete is also up-to-date.
 	if option.Config.DisableCiliumEndpointCRD {
 		log.Infof("KubeDNS unmanaged pods controller disabled as %q option is set to 'disabled' in Cilium ConfigMap", option.DisableCiliumEndpointCRDName)
 	} else if operatorOption.Config.UnmanagedPodWatcherInterval != 0 {
@@ -467,7 +470,7 @@ func onOperatorStartLeading(ctx context.Context) {
 					log := log.WithField(logfields.LogSubsys, "etcd")
 					goopts = &kvstore.ExtraOptions{
 						DialOption: []grpc.DialOption{
-							grpc.WithDialer(k8s.CreateCustomDialer(svcGetter, log)),
+							grpc.WithContextDialer(k8s.CreateCustomDialer(svcGetter, log)),
 						},
 					}
 				}
@@ -485,6 +488,20 @@ func onOperatorStartLeading(ctx context.Context) {
 		}
 
 		startKvstoreWatchdog()
+	}
+
+	if k8s.IsEnabled() &&
+		(operatorOption.Config.RemoveCiliumNodeTaints || operatorOption.Config.SetCiliumIsUpCondition) {
+		stopCh := make(chan struct{})
+
+		log.WithFields(logrus.Fields{
+			logfields.K8sNamespace:       operatorOption.Config.CiliumK8sNamespace,
+			"label-selector":             operatorOption.Config.CiliumPodLabels,
+			"remove-cilium-node-taints":  operatorOption.Config.RemoveCiliumNodeTaints,
+			"set-cilium-is-up-condition": operatorOption.Config.SetCiliumIsUpCondition,
+		}).Info("Removing Cilium Node Taints or Setting Cilium Is Up Condition for Kubernetes Nodes")
+
+		operatorWatchers.HandleNodeTolerationAndTaints(stopCh)
 	}
 
 	if err := startSynchronizingCiliumNodes(ctx, nodeManager, withKVStore); err != nil {
@@ -555,6 +572,15 @@ func onOperatorStartLeading(ctx context.Context) {
 	if err != nil {
 		log.WithError(err).WithField(logfields.LogSubsys, "CCNPWatcher").Fatal(
 			"Cannot connect to Kubernetes apiserver ")
+	}
+
+	if operatorOption.Config.EnableIngressController {
+		ingressController, err := ingress.NewIngressController(ingress.WithHTTPSEnforced(operatorOption.Config.EnforceIngressHTTPS))
+		if err != nil {
+			log.WithError(err).WithField(logfields.LogSubsys, ingress.Subsys).Fatal(
+				"Failed to start ingress controller")
+		}
+		go ingressController.Run()
 	}
 
 	log.Info("Initialization complete")

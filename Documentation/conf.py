@@ -36,7 +36,8 @@ import cilium_spellfilters
 # extensions coming with Sphinx (named 'sphinx.ext.*') or your custom
 # ones.
 html_logo = "images/logo.svg"
-extensions = ['sphinx.ext.ifconfig',
+extensions = ['myst_parser',
+              'sphinx.ext.ifconfig',
               'sphinx.ext.githubpages',
               'sphinx.ext.extlinks',
               'sphinxcontrib.openapi',
@@ -52,9 +53,6 @@ templates_path = ['_templates']
 #
 # source_suffix = ['.rst', '.md']
 source_suffix = ['.rst', '.md']
-source_parsers = {
-    '.md': 'recommonmark.parser.CommonMarkParser',
-}
 
 # The master toctree document.
 master_doc = 'index'
@@ -72,6 +70,7 @@ author = u'Cilium Authors'
 release = open("../VERSION", "r").read().strip()
 # Used by version warning
 versionwarning_body_selector = "div.document"
+versionwarning_api_url = "docs.cilium.io"
 
 # The version of Go used to compile Cilium
 go_release = open("../GO_VERSION", "r").read().strip()
@@ -159,6 +158,9 @@ todo_include_todos = False
 # Add custom filters for spell checks.
 spelling_filters = [cilium_spellfilters.WireGuardFilter]
 
+# Ignore some warnings from MyST parser
+suppress_warnings = ['myst.header']
+
 
 # -- Options for HTML output ----------------------------------------------
 
@@ -186,6 +188,11 @@ html_theme_options = {
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ['images', '_static']
+
+# Add any extra paths that contain custom files (such as robots.txt or
+# .htaccess) here, relative to this directory. These files are copied
+# directly to the root of the documentation.
+html_extra_path = ['robots']
 
 # -- Options for HTMLHelp output ------------------------------------------
 
@@ -251,9 +258,9 @@ default_role = 'any'
 
 
 def setup(app):
-    app.add_stylesheet('parsed-literal.css')
-    app.add_stylesheet('copybutton.css')
-    app.add_stylesheet('editbutton.css')
-    app.add_javascript('clipboardjs.min.js')
-    app.add_javascript("copybutton.js")
-    app.add_stylesheet('helm-reference.css')
+    app.add_css_file('parsed-literal.css')
+    app.add_css_file('copybutton.css')
+    app.add_css_file('editbutton.css')
+    app.add_js_file('clipboardjs.min.js')
+    app.add_js_file("copybutton.js")
+    app.add_css_file('helm-reference.css')

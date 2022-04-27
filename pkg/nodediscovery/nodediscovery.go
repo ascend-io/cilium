@@ -59,6 +59,12 @@ type k8sNodeGetter interface {
 	GetK8sNode(ctx context.Context, nodeName string) (*corev1.Node, error)
 }
 
+// The KVStoreNodeUpdater interface is used to provide an abstraction for the
+// NodeStore object logic used to update a node entry in the KV store.
+type KVStoreNodeUpdater interface {
+	UpdateKVNodeEntry(node *nodeTypes.Node) error
+}
+
 // NodeDiscovery represents a node discovery action
 type NodeDiscovery struct {
 	Manager               *nodemanager.Manager
@@ -526,6 +532,10 @@ func (n *NodeDiscovery) mutateNodeResource(nodeResource *ciliumv2.CiliumNode) er
 				nodeResource.Spec.ENI.VpcID = c.ENI.VpcID
 			}
 
+			if len(c.ENI.ExcludeInterfaceTags) > 0 {
+				nodeResource.Spec.ENI.ExcludeInterfaceTags = c.ENI.ExcludeInterfaceTags
+			}
+
 			nodeResource.Spec.ENI.DeleteOnTermination = c.ENI.DeleteOnTermination
 		}
 
@@ -687,4 +697,20 @@ func validatePrimaryCIDR(oldCIDR, newCIDR *cidr.CIDR, family ipam.Family) {
 
 func getInt(i int) *int {
 	return &i
+}
+
+func (nodeDiscovery *NodeDiscovery) UpdateKVNodeEntry(node *nodeTypes.Node) error {
+	if nodeDiscovery.Registrar.SharedStore == nil {
+		return nil
+	}
+
+	if err := nodeDiscovery.Registrar.UpdateLocalKeySync(node); err != nil {
+		return fmt.Errorf("failed to update KV node store entry: %w", err)
+	}
+
+	if err := nodeDiscovery.mutateNodeResource(node.ToCiliumNode()); err != nil {
+		return fmt.Errorf("failed to mutate node resource: %w", err)
+	}
+
+	return nil
 }

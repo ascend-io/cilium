@@ -1,10 +1,10 @@
 ACK
 AKS
-Anthos
 APIEndpoint
 AdapterLimitViaAPI
 Alemayhu
 Alibaba
+Anthos
 BPF
 Bertin
 Blanco
@@ -90,7 +90,6 @@ MaskSize
 Mbit
 Mellanox
 Menlo
-mentees
 Mesos
 MiB
 Minikube
@@ -129,6 +128,7 @@ Terraform
 Tierney
 Tu
 Twilio
+Uptime
 VM
 VPC
 Vagrantcloud
@@ -151,6 +151,7 @@ allocator
 allocators
 amd
 analytics
+annotateK
 ansible
 api
 apiKeys
@@ -189,11 +190,13 @@ balancer
 balancers
 bandwidthManager
 battlestation
+bbr
 bcc
 behaviour
 benchmarking
 benefitting
 bgp
+bgpControlPlane
 binPath
 bindProtection
 blog
@@ -257,6 +260,7 @@ cnpStatusUpdates
 codebase
 committer
 committers
+compat
 compinit
 conf
 confFileMountPath
@@ -306,6 +310,7 @@ decapsulated
 decapsulation
 decrypt
 decrypted
+deepcopy
 deletetopic
 demux
 dereference
@@ -347,6 +352,7 @@ enableCriticalPriorityClass
 enableHealthCheck
 enableIPv
 enableIdentityMark
+enableIngressController
 enableK
 enableXTSocketFallback
 enablement
@@ -358,6 +364,7 @@ endpointRoutes
 endpointSelector
 endpointStatus
 endpointmanager
+enforceHttps
 eni
 eniTags
 etcd
@@ -446,6 +453,7 @@ hostPort
 hostRoot
 hostServices
 hostname
+hostns
 hostonlyif
 hostonlyifs
 hostport
@@ -468,9 +476,11 @@ identityChangeGracePeriod
 identityGCInterval
 identityHeartbeatTimeout
 ie
+ifindex
 imagePullSecrets
 incrementing
 indices
+ingressController
 ingressing
 init
 initContainer
@@ -481,8 +491,11 @@ inlining
 inodes
 installIptablesRules
 installNoConntrackIptablesRules
+installRoutes
+instanceTagsFilter
 integrations
 internet
+intervalSeconds
 intra
 io
 ip
@@ -606,6 +619,7 @@ mediabot
 memcache
 memcached
 memcd
+mentees
 metadata
 metricsServer
 microk
@@ -680,6 +694,7 @@ originatingTLS
 pahole
 parserfactory
 parsers
+passthrough
 pc
 pcap
 perf
@@ -714,14 +729,17 @@ preloading
 prem
 prepend
 prepulls
+prerequirement
 priori
 priorityClassName
+procfs
 productpage
 profiler
 prog
 programmability
 prometheus
 protobuf
+proxying
 proxylib
 pullPolicy
 qdisc
@@ -745,11 +763,13 @@ recompiles
 recv
 recvmsg
 refactoring
+refreshPeriod
 regenerations
 regex
 regexes
 relocations
 remoteNodeIdentity
+removeNodeTaints
 reparsing
 replicaset
 repo
@@ -759,6 +779,7 @@ requireIPv
 resourceQuotas
 retpoline
 retransmission
+retransmissions
 retrigger
 retryTimeout
 rn
@@ -773,6 +794,7 @@ runPath
 runtime
 runtimes
 sEventHandover
+sNode
 sNodes
 sService
 sServiceHost
@@ -797,6 +819,7 @@ serviceAnnotations
 serviceMonitor
 servicePort
 sessionAffinity
+setNodeNetworkStatus
 setrlimit
 setupinterface
 setupiptables
@@ -901,6 +924,7 @@ uninstall
 uninstallOnExit
 unix
 unmanaged
+unmanagedPodWatcher
 unsettable
 untriaged
 untrusted

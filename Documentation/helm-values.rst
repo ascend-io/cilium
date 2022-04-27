@@ -21,6 +21,10 @@
      - Enable AlibabaCloud ENI integration
      - bool
      - ``false``
+   * - annotateK8sNode
+     - Annotate k8s node upon initialization with Cilium's metadata.
+     - bool
+     - ``false``
    * - autoDirectNodeRoutes
      - Enable installation of PodCIDR routes between worker nodes if worker nodes share a common L2 network segment.
      - bool
@@ -30,7 +34,15 @@
      - bool
      - ``false``
    * - bandwidthManager
-     - Optimize TCP and UDP workloads and enable rate-limiting traffic from individual Pods with EDT (Earliest Departure Time) through the "kubernetes.io/egress-bandwidth" Pod annotation.
+     - Enable bandwidth manager to optimize TCP and UDP workloads and allow for rate-limiting traffic from individual Pods with EDT (Earliest Departure Time) through the "kubernetes.io/egress-bandwidth" Pod annotation.
+     - object
+     - ``{"bbr":false,"enabled":false}``
+   * - bandwidthManager.bbr
+     - Activate BBR TCP congestion control for Pods
+     - bool
+     - ``false``
+   * - bandwidthManager.enabled
+     - Enable bandwidth manager infrastructure (also prerequirement for BBR)
      - bool
      - ``false``
    * - bgp
@@ -47,6 +59,14 @@
      - ``false``
    * - bgp.enabled
      - Enable BGP support inside Cilium; embeds a new ConfigMap for BGP inside cilium-agent and cilium-operator
+     - bool
+     - ``false``
+   * - bgpControlPlane
+     - This feature set enables virtual BGP routers to be created via  CiliumBGPPeeringPolicy CRDs.
+     - object
+     - ``{"enabled":false}``
+   * - bgpControlPlane.enabled
+     - Enables the BGP control plane.
      - bool
      - ``false``
    * - bpf.clockProbe
@@ -136,7 +156,7 @@
    * - clustermesh.apiserver.etcd.image
      - Clustermesh API server etcd image.
      - object
-     - ``{"override":null,"pullPolicy":"Always","repository":"quay.io/coreos/etcd","tag":"v3.4.13"}``
+     - ``{"override":null,"pullPolicy":"Always","repository":"quay.io/coreos/etcd","tag":"v3.5.2@sha256:70fe70b6cdaea99fa9e99d3a16483954eb084c3b32a2475abea4e709a793636c"}``
    * - clustermesh.apiserver.extraEnv
      - Additional clustermesh-apiserver environment variables.
      - list
@@ -348,7 +368,11 @@
    * - egressGateway
      - Enables egress gateway (beta) to redirect and SNAT the traffic that leaves the cluster.
      - object
-     - ``{"enabled":false}``
+     - ``{"enabled":false,"installRoutes":false}``
+   * - egressGateway.installRoutes
+     - Install egress gateway IP rules and routes in order to properly steer egress gateway traffic to the correct ENI interface
+     - bool
+     - ``false``
    * - enableCiliumEndpointSlice
      - Enable CiliumEndpointSlice feature.
      - bool
@@ -465,12 +489,16 @@
      - If using IAM role for Service Accounts will not try to inject identity values from cilium-aws kubernetes secret. Adds annotation to service account if managed by Helm. See https://github.com/aws/amazon-eks-pod-identity-webhook
      - string
      - ``""``
+   * - eni.instanceTagsFilter
+     - Filter via AWS EC2 Instance tags (k=v) which will dictate which AWS EC2 Instances are going to be used to create new ENIs
+     - string
+     - ``""``
    * - eni.subnetIDsFilter
-     - Filter via subnet IDs which will dictate which subnets are going to be used to create new ENIs
+     - Filter via subnet IDs which will dictate which subnets are going to be used to create new ENIs Important note: This requires that each instance has an ENI with a matching subnet attached when Cilium is deployed. If you only want to control subnets for ENIs attached by Cilium, use the CNI configuration file settings (cni.customConf) instead.
      - string
      - ``""``
    * - eni.subnetTagsFilter
-     - Filter via tags (k=v) which will dictate which subnets are going to be used to create new ENIs
+     - Filter via tags (k=v) which will dictate which subnets are going to be used to create new ENIs Important note: This requires that each instance has an ENI with a matching subnet attached when Cilium is deployed. If you only want to control subnets for ENIs attached by Cilium, use the CNI configuration file settings (cni.customConf) instead.
      - string
      - ``""``
    * - eni.updateEC2AdapterLimitViaAPI
@@ -908,7 +936,7 @@
    * - hubble.ui.proxy.image
      - Hubble-ui ingress proxy image.
      - object
-     - ``{"override":null,"pullPolicy":"Always","repository":"docker.io/envoyproxy/envoy","tag":"v1.18.4@sha256:e5c2bb2870d0e59ce917a5100311813b4ede96ce4eb0c6bfa879e3fbe3e83935"}``
+     - ``{"override":null,"pullPolicy":"Always","repository":"docker.io/envoyproxy/envoy","tag":"v1.20.2@sha256:eb7d88d5186648049f0a80062120bd45e7557bdff3f6a30e1fc92cbb50916868"}``
    * - hubble.ui.proxy.resources
      - Resource requests and limits for the 'proxy' container of the 'hubble-ui' deployment.
      - object
@@ -957,6 +985,14 @@
      - Configure image pull secrets for pulling container images
      - string
      - ``nil``
+   * - ingressController.enabled
+     - Enable cilium ingress controller This will automatically set enable-envoy-config as well.
+     - bool
+     - ``false``
+   * - ingressController.enforceHttps
+     - Enforce https for host having matching TLS host in Ingress. Incoming traffic to http listener will return 308 http error code with respective location in header.
+     - bool
+     - ``true``
    * - installIptablesRules
      - Configure whether to install iptables rules to allow for TPROXY (L7 proxy injection), iptables-based masquerading and compatibility with kube-proxy.
      - bool
@@ -1025,14 +1061,14 @@
      - healthz server bind address for the kube-proxy replacement. To enable set the value to '0.0.0.0:10256' for all ipv4 addresses and this '[::]:10256' for all ipv6 addresses. By default it is disabled.
      - string
      - ``""``
-   * - l2NeighDiscovery.arping-refresh-period
-     - Override the agent's default neighbor resolution refresh period.
-     - string
-     - ``"30s"``
    * - l2NeighDiscovery.enabled
      - Enable L2 neighbor discovery in the agent
      - bool
      - ``true``
+   * - l2NeighDiscovery.refreshPeriod
+     - Override the agent's default neighbor resolution refresh period.
+     - string
+     - ``"30s"``
    * - l7Proxy
      - Enable Layer 7 network policy.
      - bool
@@ -1100,7 +1136,7 @@
    * - nodeinit.bootstrapFile
      - bootstrapFile is the location of the file where the bootstrap timestamp is written by the node-init DaemonSet
      - string
-     - ``"/tmp/cilium-bootstrap-time"``
+     - ``"/tmp/cilium-bootstrap.d/cilium-bootstrap-time"``
    * - nodeinit.enabled
      - Enable the node initialization DaemonSet
      - bool
@@ -1112,7 +1148,7 @@
    * - nodeinit.image
      - node-init image.
      - object
-     - ``{"override":null,"pullPolicy":"Always","repository":"quay.io/cilium/startup-script","tag":"62bfbe88c17778aad7bef9fa57ff9e2d4a9ba0d8"}``
+     - ``{"override":null,"pullPolicy":"Always","repository":"quay.io/cilium/startup-script","tag":"d69851597ea019af980891a4628fb36b7880ec26"}``
    * - nodeinit.nodeSelector
      - Node labels for nodeinit pod assignment ref: https://kubernetes.io/docs/user-guide/node-selection/
      - object
@@ -1136,7 +1172,7 @@
    * - nodeinit.securityContext
      - Security context to be added to nodeinit pods.
      - object
-     - ``{"privileged":true}``
+     - ``{"capabilities":{"add":["SYS_MODULE","NET_ADMIN","SYS_ADMIN","SYS_PTRACE"]},"privileged":false,"seLinuxOptions":{"level":"s0","type":"spc_t"}}``
    * - nodeinit.tolerations
      - Node tolerations for nodeinit scheduling to nodes with taints ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/
      - list
@@ -1233,6 +1269,10 @@
      - Labels to add to ServiceMonitor cilium-operator
      - object
      - ``{}``
+   * - operator.removeNodeTaints
+     - Remove Cilium node taint from Kubernetes nodes that have a healthy Cilium pod running.
+     - bool
+     - ``true``
    * - operator.replicas
      - Number of replicas to run for the cilium-operator deployment
      - int
@@ -1249,6 +1289,10 @@
      - Security context to be added to cilium-operator pods
      - object
      - ``{}``
+   * - operator.setNodeNetworkStatus
+     - Set Node condition NetworkUnavailable to 'false' with the reason 'CiliumIsUp' for nodes that have a healthy Cilium pod.
+     - bool
+     - ``true``
    * - operator.skipCRDCreation
      - Skip CRDs creation for cilium-operator
      - bool
@@ -1257,6 +1301,14 @@
      - Node tolerations for cilium-operator scheduling to nodes with taints ref: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/
      - list
      - ``[{"operator":"Exists"}]``
+   * - operator.unmanagedPodWatcher.intervalSeconds
+     - Interval, in seconds, to check if there are any pods that are not managed by Cilium.
+     - int
+     - ``15``
+   * - operator.unmanagedPodWatcher.restart
+     - Restart any pod that are not managed by Cilium.
+     - bool
+     - ``true``
    * - operator.updateStrategy
      - cilium-operator update strategy
      - object
@@ -1412,7 +1464,7 @@
    * - securityContext
      - Security context to be added to agent pods
      - object
-     - ``{}``
+     - ``{"privileged":false}``
    * - serviceAccounts
      - Define serviceAccount names for components.
      - object
@@ -1495,6 +1547,10 @@
      - ``""``
    * - vtep.mac
      - A space separated list of VTEP device MAC addresses (VTEP MAC), for example "x:x:x:x:x:x  y:y:y:y:y:y:y"
+     - string
+     - ``""``
+   * - vtep.mask
+     - VTEP CIDRs Mask that applies to all VTEP CIDRs, for example "255.255.255.0"
      - string
      - ``""``
    * - wellKnownIdentities.enabled

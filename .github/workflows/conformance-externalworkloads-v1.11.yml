@@ -65,7 +65,7 @@ env:
   vmName: ${{ github.repository_owner }}-${{ github.event.repository.name }}-${{ github.run_id }}-vm
   zone: us-west2-a
   vmStartupScript: .github/gcp-vm-startup.sh
-  cilium_cli_version: v0.10.4
+  cilium_cli_version: v0.11.1
   check_url: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
 jobs:
@@ -86,7 +86,7 @@ jobs:
       # paths-filter to work.
       - name: Checkout code
         if: ${{ github.event.issue.pull_request }}
-        uses: actions/checkout@a12a3943b4bdde767164f792f33f40b04645d846
+        uses: actions/checkout@dcd71f646680f2efd8db4afa5ad64fdcba30e748
         with:
           persist-credentials: false
       - name: Retrieve pull request's base and head
@@ -137,16 +137,29 @@ jobs:
           fi
 
           CILIUM_INSTALL_DEFAULTS="--cluster-name=${{ env.clusterName }} \
-            --agent-image=quay.io/${{ github.repository_owner }}/cilium-ci \
-            --operator-image=quay.io/${{ github.repository_owner }}/operator-generic-ci \
-            --version=${SHA} \
+            --chart-directory=install/kubernetes/cilium \
+            --helm-set=image.repository=quay.io/${{ github.repository_owner }}/cilium-ci \
+            --helm-set=image.useDigest=false \
+            --helm-set=image.tag=${SHA} \
+            --helm-set=operator.image.repository=quay.io/${{ github.repository_owner }}/operator \
+            --helm-set=operator.image.suffix=-ci \
+            --helm-set=operator.image.tag=${SHA} \
+            --helm-set=operator.image.useDigest=false \
+            --helm-set=clustermesh.apiserver.image.repository=quay.io/${{ github.repository_owner }}/clustermesh-apiserver-ci \
+            --helm-set=clustermesh.apiserver.image.tag=${SHA} \
+            --helm-set=clustermesh.apiserver.image.useDigest=false \
+            --helm-set=hubble.relay.image.repository=quay.io/${{ github.repository_owner }}/hubble-relay-ci \
+            --helm-set=hubble.relay.image.tag=${SHA} \
             --wait=false \
             --rollback=false \
             --config monitor-aggregation=none \
             --config tunnel=vxlan \
             --kube-proxy-replacement=strict \
-            --base-version=v1.11"
-          HUBBLE_ENABLE_DEFAULTS="--relay-image=quay.io/${{ github.repository_owner }}/hubble-relay-ci \
+            --base-version=v1.11 \
+            --version="
+          HUBBLE_ENABLE_DEFAULTS=" --chart-directory=install/kubernetes/cilium \
+            --relay-image=quay.io/${{ github.repository_owner }}/hubble-relay-ci:${SHA} \
+            --base-version=v1.11 \
             --relay-version=${SHA}"
           CLUSTERMESH_ENABLE_DEFAULTS="--apiserver-image=quay.io/${{ github.repository_owner }}/clustermesh-apiserver-ci \
             --apiserver-version=${SHA}"
@@ -170,8 +183,9 @@ jobs:
           target_url: ${{ env.check_url }}
 
       - name: Checkout code
-        uses: actions/checkout@a12a3943b4bdde767164f792f33f40b04645d846
+        uses: actions/checkout@dcd71f646680f2efd8db4afa5ad64fdcba30e748
         with:
+          ref: ${{ steps.vars.outputs.sha }}
           persist-credentials: false
 
       - name: Install Cilium CLI
@@ -234,7 +248,7 @@ jobs:
         shell: bash
         run: |
           for image in cilium-ci operator-generic-ci hubble-relay-ci clustermesh-apiserver-ci ; do
-            until curl --silent -f -lSL "https://quay.io/api/v1/repository/${{ github.repository_owner }}/$image/tag/?specificTag=${{ steps.vars.outputs.sha }}" &> /dev/null; do sleep 45s; done
+            until docker manifest inspect quay.io/${{ github.repository_owner }}/$image:${{ steps.vars.outputs.sha }} &> /dev/null; do sleep 45s; done
           done
 
       - name: Install Cilium in cluster
@@ -265,9 +279,10 @@ jobs:
             --command "cilium status"
 
       - name: Verify cluster DNS on VM
+        # Limit nslookup to the first (global) DNS server setting
         run: |
           gcloud compute ssh ${{ env.vmName }} --zone ${{ env.zone }} \
-            --command "nslookup -norecurse clustermesh-apiserver.kube-system.svc.cluster.local"
+            --command "nslookup -d2 -retry=10 -timeout=5 -norecurse clustermesh-apiserver.kube-system.svc.cluster.local \$(systemd-resolve --status | grep -m 1 \"Current DNS Server:\" | cut -d':' -f2)"
 
       - name: Ping clustermesh-apiserver from VM
         run: |

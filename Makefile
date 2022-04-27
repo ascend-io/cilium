@@ -54,6 +54,7 @@ JOB_BASE_NAME ?= cilium_test
 GO_VERSION := $(shell cat GO_VERSION)
 GO_MAJOR_AND_MINOR_VERSION := $(shell sed 's/\([0-9]\+\).\([0-9]\+\)\(.[0-9]\+\)\?/\1.\2/' GO_VERSION)
 GO_IMAGE_VERSION := $(shell awk -F. '{ z=$$3; if (z == "") z=0; print $$1 "." $$2 "." z}' GO_VERSION)
+GO_INSTALLED_MAJOR_AND_MINOR_VERSION := $(shell $(GO) version | sed 's/go version go\([0-9]\+\).\([0-9]\+\)\(.[0-9]\+\)\?.*/\1.\2/')
 
 DOCKER_FLAGS ?=
 
@@ -130,7 +131,7 @@ build-container: ## Builds components required for cilium-agent container.
 $(SUBDIRS): force ## Execute default make target(make all) for the provided subdirectory.
 	@ $(MAKE) $(SUBMAKEOPTS) -C $@ all
 
-PRIV_TEST_PKGS_EVAL := $(shell for pkg in $(TESTPKGS); do echo $$pkg; done | xargs grep --include='*.go' -ril '+build [^!]*privileged_tests' | xargs dirname | sort | uniq)
+PRIV_TEST_PKGS_EVAL := $(shell for pkg in $(TESTPKGS); do echo $$pkg; done | xargs grep --include='*.go' -ril 'go:build [^!]*privileged_tests' | xargs dirname | sort | uniq)
 PRIV_TEST_PKGS ?= $(PRIV_TEST_PKGS_EVAL)
 tests-privileged: GO_TAGS_FLAGS+=privileged_tests ## Run integration-tests for Cilium that requires elevated privileges.
 tests-privileged:
@@ -309,6 +310,10 @@ manifests: ## Generate K8s manifests e.g. CRD, RBAC etc.
 	mv ${TMPDIR}/cilium.io_ciliumlocalredirectpolicies.yaml ./pkg/k8s/apis/cilium.io/client/crds/v2/ciliumlocalredirectpolicies.yaml
 	mv ${TMPDIR}/cilium.io_ciliumegressnatpolicies.yaml ./pkg/k8s/apis/cilium.io/client/crds/v2alpha1/ciliumegressnatpolicies.yaml
 	mv ${TMPDIR}/cilium.io_ciliumendpointslices.yaml ./pkg/k8s/apis/cilium.io/client/crds/v2alpha1/ciliumendpointslices.yaml
+	mv ${TMPDIR}/cilium.io_ciliumclusterwideenvoyconfigs.yaml ./pkg/k8s/apis/cilium.io/client/crds/v2alpha1/ciliumclusterwideenvoyconfigs.yaml
+	mv ${TMPDIR}/cilium.io_ciliumenvoyconfigs.yaml ./pkg/k8s/apis/cilium.io/client/crds/v2alpha1/ciliumenvoyconfigs.yaml
+	mv ${TMPDIR}/cilium.io_ciliumbgppeeringpolicies.yaml ./pkg/k8s/apis/cilium.io/client/crds/v2alpha1/ciliumbgppeeringpolicies.yaml
+	mv ${TMPDIR}/cilium.io_ciliumbgploadbalancerippools.yaml ./pkg/k8s/apis/cilium.io/client/crds/v2alpha1/ciliumbgploadbalancerippools.yaml
 	rm -rf $(TMPDIR)
 
 generate-api: api/v1/openapi.yaml ## Generate cilium-agent client, model and server code from openapi spec.
@@ -411,6 +416,7 @@ generate-k8s-api: ## Generate Cilium k8s API client, deepcopy and deepequal Go s
 	maps:signalmap\
 	maps:sockmap\
 	maps:tunnel\
+	maps:vtep\
 	node:types\
 	policy:api\
 	service:store")
@@ -519,7 +525,7 @@ kind-image:
 	$(QUIET)$(CONTAINER_ENGINE) push $(LOCAL_IMAGE)
 	$(QUIET)kind load docker-image $(LOCAL_IMAGE)
 
-precheck: logging-subsys-field ## Peform build precheck for the source code.
+precheck: check-go-version logging-subsys-field ## Peform build precheck for the source code.
 ifeq ($(SKIP_K8S_CODE_GEN_CHECK),"false")
 	@$(ECHO_CHECK) contrib/scripts/check-k8s-code-gen.sh
 	$(QUIET) contrib/scripts/check-k8s-code-gen.sh
@@ -589,6 +595,14 @@ postcheck: build ## Run Cilium build postcheck (update-cmdref, build documentati
 
 licenses-all: ## Generate file with all the License from dependencies.
 	@$(GO) run ./tools/licensegen > LICENSE.all || ( rm -f LICENSE.all ; false )
+
+check-go-version: ## Check locally install Go version against required Go version.
+ifneq ($(GO_MAJOR_AND_MINOR_VERSION),$(GO_INSTALLED_MAJOR_AND_MINOR_VERSION))
+	@echo "Installed Go version $(GO_INSTALLED_MAJOR_AND_MINOR_VERSION) does not match requested Go version $(GO_MAJOR_AND_MINOR_VERSION)"
+	@exit 1
+else
+	@$(ECHO_CHECK) "Installed Go version $(GO_INSTALLED_MAJOR_AND_MINOR_VERSION) matches required version $(GO_MAJOR_AND_MINOR_VERSION)"
+endif
 
 update-go-version: ## Update Go version for all the components (images, CI, dev-doctor etc.).
 	# Update dev-doctor Go version.

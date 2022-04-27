@@ -23,12 +23,19 @@ import (
 	"github.com/cilium/cilium/pkg/u8proto"
 )
 
+const DefaultMaxEntries = 65536
+
 var log = logging.DefaultLogger.WithField(logfields.LogSubsys, "map-lb")
 
 var (
 	// MaxEntries contains the maximum number of entries that are allowed
 	// in Cilium LB service, backend and affinity maps.
-	MaxEntries = 65536
+	ServiceMapMaxEntries        = DefaultMaxEntries
+	ServiceBackEndMapMaxEntries = DefaultMaxEntries
+	RevNatMapMaxEntries         = DefaultMaxEntries
+	AffinityMapMaxEntries       = DefaultMaxEntries
+	SourceRangeMapMaxEntries    = DefaultMaxEntries
+	MaglevMapMaxEntries         = DefaultMaxEntries
 )
 
 // LBBPFMap is an implementation of the LBMap interface.
@@ -55,8 +62,9 @@ type UpsertServiceParams struct {
 	ID                        uint16
 	IP                        net.IP
 	Port                      uint16
-	Backends                  map[string]loadbalancer.BackendID
-	PrevActiveBackendCount    int
+	ActiveBackends            map[string]loadbalancer.BackendID
+	NonActiveBackends         []loadbalancer.BackendID
+	PrevBackendsCount         int
 	IPv6                      bool
 	Type                      loadbalancer.SVCType
 	NatPolicy                 loadbalancer.SVCNatPolicy
@@ -66,6 +74,7 @@ type UpsertServiceParams struct {
 	SessionAffinityTimeoutSec uint32
 	CheckSourceRange          bool
 	UseMaglev                 bool
+	L7LBProxyPort             uint16 // Non-zero for L7 LB services
 }
 
 func (lbmap *LBBPFMap) upsertServiceProto(p *UpsertServiceParams, ipv6 bool) error {
@@ -78,11 +87,6 @@ func (lbmap *LBBPFMap) upsertServiceProto(p *UpsertServiceParams, ipv6 bool) err
 	// - IPv6 to IPv4 will add its IPv4 backends as IPv4-in-IPv6 backends
 	//   to the IPv6 backend map.
 	backendsOk := ipv6 || !ipv6 && p.NatPolicy != loadbalancer.SVCNatPolicyNat46
-	backendLen := 0
-	if backendsOk {
-		backendLen = len(p.Backends)
-	}
-	backendIDs := make([]loadbalancer.BackendID, 0, backendLen)
 
 	if ipv6 {
 		svcKey = NewService6Key(p.IP, p.Port, u8proto.ANY, p.Scope, 0)
@@ -93,16 +97,15 @@ func (lbmap *LBBPFMap) upsertServiceProto(p *UpsertServiceParams, ipv6 bool) err
 	slot := 1
 	svcVal := svcKey.NewValue().(ServiceValue)
 
-	if p.UseMaglev && len(p.Backends) != 0 {
-		if err := lbmap.UpsertMaglevLookupTable(p.ID, p.Backends, ipv6); err != nil {
+	if p.UseMaglev && len(p.ActiveBackends) != 0 {
+		if err := lbmap.UpsertMaglevLookupTable(p.ID, p.ActiveBackends, ipv6); err != nil {
 			return err
 		}
 	}
 
 	if backendsOk {
-		for _, id := range p.Backends {
-			backendIDs = append(backendIDs, id)
-		}
+		backendIDs := GetOrderedBackends(p)
+
 		for _, backendID := range backendIDs {
 			if backendID == 0 {
 				return fmt.Errorf("Invalid backend ID 0")
@@ -118,6 +121,7 @@ func (lbmap *LBBPFMap) upsertServiceProto(p *UpsertServiceParams, ipv6 bool) err
 						"The resizing might break existing connections to services",
 						svcKey, svcVal, option.LBMapEntriesName)
 				}
+
 				return fmt.Errorf("Unable to update service entry %+v => %+v: %w", svcKey, svcVal, err)
 			}
 			slot++
@@ -132,14 +136,14 @@ func (lbmap *LBBPFMap) upsertServiceProto(p *UpsertServiceParams, ipv6 bool) err
 		return fmt.Errorf("Unable to update reverse NAT %+v => %+v: %s", revNATKey, revNATValue, err)
 	}
 
-	if err := updateMasterService(svcKey, backendLen, int(p.ID), p.Type, p.Local, p.NatPolicy,
-		p.SessionAffinity, p.SessionAffinityTimeoutSec, p.CheckSourceRange); err != nil {
+	if err := updateMasterService(svcKey, len(p.ActiveBackends), int(p.ID), p.Type, p.Local, p.NatPolicy,
+		p.SessionAffinity, p.SessionAffinityTimeoutSec, p.CheckSourceRange, p.L7LBProxyPort); err != nil {
 		deleteRevNatLocked(revNATKey)
 		return fmt.Errorf("Unable to update service %+v: %s", svcKey, err)
 	}
 
 	if backendsOk {
-		for i := slot; i <= p.PrevActiveBackendCount; i++ {
+		for i := slot; i <= p.PrevBackendsCount; i++ {
 			svcKey.SetBackendSlot(i)
 			if err := deleteServiceLocked(svcKey); err != nil {
 				log.WithFields(logrus.Fields{
@@ -161,6 +165,13 @@ func (lbmap *LBBPFMap) upsertServiceProto(p *UpsertServiceParams, ipv6 bool) err
 // The service's prevActiveBackendCount denotes the count of previously active
 // backend entries that were added to the BPF map so that the function can remove
 // obsolete ones.
+//
+// The service's non-active backends are appended to the active backends list,
+// and skipped from the service backends count set in the master key so that the
+// non-active backends will not be considered for load-balancing traffic. The
+// backends count is used in the datapath to determine if a service has any backends.
+// The non-active backends are, however, populated in the service map so that they
+// can be restored upon agent restart along with their state.
 func (lbmap *LBBPFMap) UpsertService(p *UpsertServiceParams) error {
 	if p.ID == 0 {
 		return fmt.Errorf("Invalid svc ID 0")
@@ -199,6 +210,27 @@ func (lbmap *LBBPFMap) UpsertMaglevLookupTable(svcID uint16, backends map[string
 	}
 
 	return nil
+}
+
+// GetOrderedBackends returns an ordered list of backends with all the sorted
+// active backend followed by non-active backends.
+// Encapsulates logic to be also used in unit tests.
+func GetOrderedBackends(p *UpsertServiceParams) []loadbalancer.BackendID {
+	backendIDs := make([]loadbalancer.BackendID, 0, len(p.ActiveBackends)+len(p.NonActiveBackends))
+	for _, id := range p.ActiveBackends {
+		backendIDs = append(backendIDs, id)
+	}
+	// Map iterations are non-deterministic so sort the backends by their IDs
+	// in order to maintain the same order before they are populated in BPF maps.
+	// This will minimize disruption to existing connections to the backends in the datapath.
+	sort.Slice(backendIDs, func(i, j int) bool { return backendIDs[i] < backendIDs[j] })
+	// Add the non-active backends to the end of active backends list so that they are
+	// not considered while selecting backends to load-balance service traffic.
+	if len(p.NonActiveBackends) > 0 {
+		backendIDs = append(backendIDs, p.NonActiveBackends...)
+	}
+
+	return backendIDs
 }
 
 func deleteServiceProto(svc loadbalancer.L3n4AddrID, backendCount int, useMaglev, ipv6 bool) error {
@@ -253,29 +285,38 @@ func (*LBBPFMap) DeleteService(svc loadbalancer.L3n4AddrID, backendCount int, us
 	return nil
 }
 
-// AddBackend adds a backend into a BPF map.
-func (*LBBPFMap) AddBackend(id loadbalancer.BackendID, ip net.IP, port uint16, ipv6 bool) error {
+// AddBackend adds a backend into a BPF map. ipv6 indicates if the backend needs
+// to be added in the v4 or v6 backend map.
+func (*LBBPFMap) AddBackend(b loadbalancer.Backend, ipv6 bool) error {
 	var (
 		backend Backend
 		err     error
 	)
 
-	if id == 0 {
-		return fmt.Errorf("Invalid backend ID 0")
+	if backend, err = getBackend(b, ipv6); err != nil {
+		return err
 	}
-
-	if ipv6 {
-		backend, err = NewBackend6V2(loadbalancer.BackendID(id), ip, port, u8proto.ANY)
-	} else {
-		backend, err = NewBackend4V2(loadbalancer.BackendID(id), ip, port, u8proto.ANY)
-	}
-	if err != nil {
-		return fmt.Errorf("Unable to create backend (%d, %s, %d, %t): %s",
-			id, ip, port, ipv6, err)
-	}
-
 	if err := updateBackend(backend); err != nil {
-		return fmt.Errorf("Unable to add backend %+v: %s", backend, err)
+		return fmt.Errorf("unable to add backend %+v: %s", backend, err)
+	}
+
+	return nil
+}
+
+// UpdateBackendWithState updates the state for the given backend.
+//
+// This function should only be called to update backend's state.
+func (*LBBPFMap) UpdateBackendWithState(b loadbalancer.Backend) error {
+	var (
+		backend Backend
+		err     error
+	)
+
+	if backend, err = getBackend(b, b.L3n4Addr.IsIPv6()); err != nil {
+		return err
+	}
+	if err := updateBackend(backend); err != nil {
+		return fmt.Errorf("unable to update backend %+v: %s", b, err)
 	}
 
 	return nil
@@ -535,7 +576,8 @@ func (*LBBPFMap) DumpBackendMaps() ([]*loadbalancer.Backend, error) {
 		ip := backendVal.GetAddress()
 		port := backendVal.GetPort()
 		proto := loadbalancer.NONE
-		lbBackend := loadbalancer.NewBackend(backendID, proto, ip, port)
+		state := loadbalancer.GetBackendStateFromFlags(backendVal.GetFlags())
+		lbBackend := loadbalancer.NewBackendWithState(backendID, proto, ip, port, state, true)
 		lbBackends = append(lbBackends, lbBackend)
 	}
 
@@ -551,9 +593,9 @@ func (*LBBPFMap) IsMaglevLookupTableRecreated(ipv6 bool) bool {
 	return maglevRecreatedIPv4
 }
 
-func updateMasterService(fe ServiceKey, nbackends int, revNATID int, svcType loadbalancer.SVCType,
+func updateMasterService(fe ServiceKey, activeBackends int, revNATID int, svcType loadbalancer.SVCType,
 	svcLocal bool, svcNatPolicy loadbalancer.SVCNatPolicy, sessionAffinity bool,
-	sessionAffinityTimeoutSec uint32, checkSourceRange bool) error {
+	sessionAffinityTimeoutSec uint32, checkSourceRange bool, l7lbProxyPort uint16) error {
 
 	// isRoutable denotes whether this service can be accessed from outside the cluster.
 	isRoutable := !fe.IsSurrogate() &&
@@ -561,7 +603,7 @@ func updateMasterService(fe ServiceKey, nbackends int, revNATID int, svcType loa
 
 	fe.SetBackendSlot(0)
 	zeroValue := fe.NewValue().(ServiceValue)
-	zeroValue.SetCount(nbackends)
+	zeroValue.SetCount(activeBackends)
 	zeroValue.SetRevNat(revNATID)
 	flag := loadbalancer.NewSvcFlag(&loadbalancer.SvcFlagParam{
 		SvcType:          svcType,
@@ -570,10 +612,14 @@ func updateMasterService(fe ServiceKey, nbackends int, revNATID int, svcType loa
 		SessionAffinity:  sessionAffinity,
 		IsRoutable:       isRoutable,
 		CheckSourceRange: checkSourceRange,
+		L7LoadBalancer:   l7lbProxyPort != 0,
 	})
 	zeroValue.SetFlags(flag.UInt16())
 	if sessionAffinity {
 		zeroValue.SetSessionAffinityTimeoutSec(sessionAffinityTimeoutSec)
+	}
+	if l7lbProxyPort != 0 {
+		zeroValue.SetL7LBProxyPort(l7lbProxyPort)
 	}
 
 	return updateServiceEndpoint(fe, zeroValue)
@@ -581,6 +627,31 @@ func updateMasterService(fe ServiceKey, nbackends int, revNATID int, svcType loa
 
 func deleteServiceLocked(key ServiceKey) error {
 	return key.Map().Delete(key.ToNetwork())
+}
+
+func getBackend(backend loadbalancer.Backend, ipv6 bool) (Backend, error) {
+	var (
+		lbBackend Backend
+		err       error
+	)
+
+	if backend.ID == 0 {
+		return lbBackend, fmt.Errorf("invalid backend ID 0")
+	}
+
+	if ipv6 {
+		lbBackend, err = NewBackend6V2(backend.ID, backend.IP, backend.Port, u8proto.ANY,
+			backend.State)
+	} else {
+		lbBackend, err = NewBackend4V2(backend.ID, backend.IP, backend.Port, u8proto.ANY,
+			backend.State)
+	}
+	if err != nil {
+		return lbBackend, fmt.Errorf("unable to create lbBackend (%d, %s, %d, %t): %s",
+			backend.ID, backend.IP, backend.Port, ipv6, err)
+	}
+
+	return lbBackend, nil
 }
 
 func updateBackend(backend Backend) error {
@@ -592,7 +663,8 @@ func updateBackend(backend Backend) error {
 }
 
 func deleteBackendLocked(key BackendKey) error {
-	return key.Map().Delete(key)
+	_, err := key.Map().SilentDelete(key)
+	return err
 }
 
 func updateServiceEndpoint(key ServiceKey, value ServiceValue) error {
@@ -679,9 +751,7 @@ func Init(params InitParams) {
 		MaxSockRevNat6MapEntries = params.MaxSockRevNatMapEntries
 	}
 
-	if params.MaxEntries != 0 {
-		MaxEntries = params.MaxEntries
-	}
+	MaglevMapMaxEntries = params.MaglevMapMaxEntries
 
 	initSVC(params)
 	initAffinity(params)
@@ -692,5 +762,9 @@ func Init(params InitParams) {
 type InitParams struct {
 	IPv4, IPv6 bool
 
-	MaxSockRevNatMapEntries, MaxEntries int
+	MaxSockRevNatMapEntries                                         int
+	ServiceMapMaxEntries, BackEndMapMaxEntries, RevNatMapMaxEntries int
+	AffinityMapMaxEntries                                           int
+	SourceRangeMapMaxEntries                                        int
+	MaglevMapMaxEntries                                             int
 }

@@ -157,6 +157,11 @@ func (d *Daemon) getBandwidthManagerStatus() *models.BandwidthManager {
 		return s
 	}
 
+	s.CongestionControl = models.BandwidthManagerCongestionControlCubic
+	if option.Config.EnableBBR {
+		s.CongestionControl = models.BandwidthManagerCongestionControlBbr
+	}
+
 	devices := make([]string, len(option.Config.Devices))
 	for i, iface := range option.Config.Devices {
 		devices[i] = iface
@@ -339,27 +344,27 @@ func (d *Daemon) getBPFMapStatus() *models.BPFMapStatus {
 			},
 			{
 				Name: "IPv4 service", // cilium_lb4_services_v2
-				Size: int64(lbmap.MaxEntries),
+				Size: int64(lbmap.ServiceMapMaxEntries),
 			},
 			{
 				Name: "IPv6 service", // cilium_lb6_services_v2
-				Size: int64(lbmap.MaxEntries),
+				Size: int64(lbmap.ServiceMapMaxEntries),
 			},
 			{
 				Name: "IPv4 service backend", // cilium_lb4_backends_v2
-				Size: int64(lbmap.MaxEntries),
+				Size: int64(lbmap.ServiceBackEndMapMaxEntries),
 			},
 			{
 				Name: "IPv6 service backend", // cilium_lb6_backends_v2
-				Size: int64(lbmap.MaxEntries),
+				Size: int64(lbmap.ServiceBackEndMapMaxEntries),
 			},
 			{
 				Name: "IPv4 service reverse NAT", // cilium_lb4_reverse_nat
-				Size: int64(lbmap.MaxEntries),
+				Size: int64(lbmap.RevNatMapMaxEntries),
 			},
 			{
 				Name: "IPv6 service reverse NAT", // cilium_lb6_reverse_nat
-				Size: int64(lbmap.MaxEntries),
+				Size: int64(lbmap.RevNatMapMaxEntries),
 			},
 			{
 				Name: "Metrics",
@@ -383,7 +388,7 @@ func (d *Daemon) getBPFMapStatus() *models.BPFMapStatus {
 			},
 			{
 				Name: "Session affinity",
-				Size: int64(lbmap.MaxEntries),
+				Size: int64(lbmap.AffinityMapMaxEntries),
 			},
 			{
 				Name: "Signal",

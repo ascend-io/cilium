@@ -50,6 +50,9 @@ const (
 	// Identity is the identifier of a security identity
 	Identity = "identity"
 
+	// Ingress is the identifier of an ingress object
+	Ingress = "ingress"
+
 	// OldIdentity is a previously used security identity
 	OldIdentity = "oldIdentity"
 
@@ -174,8 +177,11 @@ const (
 	// IPv6CIDRs is a list of IPv6 CIDRs
 	IPv6CIDRs = "ipv6CIDRs"
 
-	// CIDR is a IPv4/IPv4 subnet/CIDR
+	// CIDR is a IPv4/IPv6 subnet/CIDR
 	CIDR = "cidr"
+
+	// CIDRS is a list of IPv4/IPv6 CIDRs
+	CIDRS = "cidrs"
 
 	// OldCIDR is the previous subnet/CIDR
 	OldCIDR = "oldCIDR"
@@ -265,6 +271,12 @@ const (
 	// BackendSlot is the backend slot number in a service BPF map
 	BackendSlot = "backendSlot"
 
+	// L7LBProxyPort is the port number of the Envoy listener a L7 LB service redirects traffic to for load balancing.
+	L7LBProxyPort = "l7LBProxyPort"
+
+	// BackendState is the state of the backend
+	BackendState = "backendState"
+
 	// CiliumNetworkPolicy is a cilium specific NetworkPolicy
 	CiliumNetworkPolicy = "ciliumNetworkPolicy"
 
@@ -285,6 +297,12 @@ const (
 
 	// CiliumEgressNATPolicyName is the name of a CiliumEgressNATPolicy
 	CiliumEgressNATPolicyName = "ciliumEgressNATPolicyName"
+
+	// CiliumClusterwideEnvoyConfigName is the name of a CiliumClusterwideEnvoyConfig
+	CiliumClusterwideEnvoyConfigName = "ciliumClusterwideEnvoyConfigName"
+
+	// CiliumEnvoyConfigName is the name of a CiliumEnvoyConfig
+	CiliumEnvoyConfigName = "ciliumEnvoyConfigName"
 
 	// BPFMapKey is a key from a BPF map
 	BPFMapKey = "bpfMapKey"

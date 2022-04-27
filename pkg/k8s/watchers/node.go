@@ -44,6 +44,13 @@ func (k *K8sWatcher) RegisterNodeSubscriber(s subscriber.Node) {
 	k.NodeChain.Register(s)
 }
 
+// The KVStoreNodeUpdater interface is used to provide an abstraction for the
+// nodediscovery.NodeDiscovery object logic used to update a node entry in the
+// KV store.
+type KVStoreNodeUpdater interface {
+	UpdateKVNodeEntry(node *nodeTypes.Node) error
+}
+
 func nodeEventsAreEqual(oldNode, newNode *v1.Node) bool {
 	if !comparator.MapStringEquals(oldNode.GetLabels(), newNode.GetLabels()) {
 		return false
@@ -66,9 +73,6 @@ func (k *K8sWatcher) NodesInit(k8sClient *k8s.K8sClient) {
 					var valid bool
 					if node := k8s.ObjToV1Node(obj); node != nil {
 						valid = true
-						if hasAgentNotReadyTaint(node) || !k8s.HasCiliumIsUpCondition(node) {
-							k8sClient.ReMarkNodeReady()
-						}
 						errs := k.NodeChain.OnAddNode(node, swg)
 						k.K8sEventProcessed(metricNode, metricCreate, errs == nil)
 					}
@@ -79,10 +83,6 @@ func (k *K8sWatcher) NodesInit(k8sClient *k8s.K8sClient) {
 					if oldNode := k8s.ObjToV1Node(oldObj); oldNode != nil {
 						valid = true
 						if newNode := k8s.ObjToV1Node(newObj); newNode != nil {
-							if hasAgentNotReadyTaint(newNode) || !k8s.HasCiliumIsUpCondition(newNode) {
-								k8sClient.ReMarkNodeReady()
-							}
-
 							equal = nodeEventsAreEqual(oldNode, newNode)
 							if !equal {
 								errs := k.NodeChain.OnUpdateNode(oldNode, newNode, swg)
@@ -104,17 +104,6 @@ func (k *K8sWatcher) NodesInit(k8sClient *k8s.K8sClient) {
 		go nodeController.Run(k.stop)
 		k.k8sAPIGroups.AddAPI(k8sAPIGroupNodeV1Core)
 	})
-}
-
-// hasAgentNotReadyTaint returns true if the given node has the Cilium Agen
-// Not Ready Node Taint.
-func hasAgentNotReadyTaint(k8sNode *v1.Node) bool {
-	for _, taint := range k8sNode.Spec.Taints {
-		if taint.Key == option.Config.AgentNotReadyNodeTaintValue() {
-			return true
-		}
-	}
-	return false
 }
 
 // GetK8sNode returns the *local Node* from the local store.
@@ -141,23 +130,25 @@ func (k *K8sWatcher) GetK8sNode(_ context.Context, nodeName string) (*v1.Node, e
 // ciliumNodeUpdater implements the subscriber.Node interface and is used
 // to keep CiliumNode objects in sync with the node ones.
 type ciliumNodeUpdater struct {
-	k8sWatcher *K8sWatcher
+	k8sWatcher         *K8sWatcher
+	kvStoreNodeUpdater KVStoreNodeUpdater
 }
 
-func NewCiliumNodeUpdater(k8sWatcher *K8sWatcher) *ciliumNodeUpdater {
+func NewCiliumNodeUpdater(k8sWatcher *K8sWatcher, kvStoreNodeUpdater KVStoreNodeUpdater) *ciliumNodeUpdater {
 	return &ciliumNodeUpdater{
-		k8sWatcher: k8sWatcher,
+		k8sWatcher:         k8sWatcher,
+		kvStoreNodeUpdater: kvStoreNodeUpdater,
 	}
 }
 
 func (u *ciliumNodeUpdater) OnAddNode(newNode *v1.Node, swg *lock.StoppableWaitGroup) error {
-	u.updateCiliumNode(newNode)
+	u.updateCiliumNode(u.kvStoreNodeUpdater, newNode)
 
 	return nil
 }
 
 func (u *ciliumNodeUpdater) OnUpdateNode(oldNode, newNode *v1.Node, swg *lock.StoppableWaitGroup) error {
-	u.updateCiliumNode(newNode)
+	u.updateCiliumNode(u.kvStoreNodeUpdater, newNode)
 
 	return nil
 }
@@ -166,7 +157,7 @@ func (u *ciliumNodeUpdater) OnDeleteNode(*v1.Node, *lock.StoppableWaitGroup) err
 	return nil
 }
 
-func (u *ciliumNodeUpdater) updateCiliumNode(node *v1.Node) {
+func (u *ciliumNodeUpdater) updateCiliumNode(kvStoreNodeUpdater KVStoreNodeUpdater, node *v1.Node) {
 	var (
 		controllerName = fmt.Sprintf("sync-node-with-ciliumnode (%v)", node.Name)
 
@@ -178,8 +169,7 @@ func (u *ciliumNodeUpdater) updateCiliumNode(node *v1.Node) {
 
 	doFunc := func(ctx context.Context) (err error) {
 		if option.Config.KVStore != "" && !option.Config.JoinCluster {
-			// TODO(jibi) handle the KV store case
-			return nil
+			return kvStoreNodeUpdater.UpdateKVNodeEntry(k8sNodeParsed)
 		} else {
 			u.k8sWatcher.ciliumNodeStoreMU.RLock()
 			defer u.k8sWatcher.ciliumNodeStoreMU.RUnlock()

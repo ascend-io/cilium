@@ -25,6 +25,8 @@ import (
 	"github.com/cilium/cilium/api/v1/server"
 	"github.com/cilium/cilium/api/v1/server/restapi"
 	"github.com/cilium/cilium/pkg/aws/eni"
+	bgpv1 "github.com/cilium/cilium/pkg/bgpv1/agent"
+	"github.com/cilium/cilium/pkg/bgpv1/gobgp"
 	"github.com/cilium/cilium/pkg/bpf"
 	"github.com/cilium/cilium/pkg/cgroups"
 	"github.com/cilium/cilium/pkg/common"
@@ -72,6 +74,7 @@ import (
 	"github.com/cilium/cilium/pkg/pidfile"
 	"github.com/cilium/cilium/pkg/policy"
 	"github.com/cilium/cilium/pkg/pprof"
+	"github.com/cilium/cilium/pkg/sysctl"
 	"github.com/cilium/cilium/pkg/version"
 	wireguard "github.com/cilium/cilium/pkg/wireguard/agent"
 	wireguardTypes "github.com/cilium/cilium/pkg/wireguard/types"
@@ -446,8 +449,17 @@ func initializeFlags() {
 	flags.Uint(option.ProxyConnectTimeout, 1, "Time after which a TCP connect attempt is considered failed unless completed (in seconds)")
 	option.BindEnv(option.ProxyConnectTimeout)
 
+	flags.Uint(option.ProxyGID, 1337, "Group ID for proxy control plane sockets.")
+	option.BindEnv(option.ProxyGID)
+
 	flags.Int(option.ProxyPrometheusPort, 0, "Port to serve Envoy metrics on. Default 0 (disabled).")
 	option.BindEnv(option.ProxyPrometheusPort)
+
+	flags.Int(option.ProxyMaxRequestsPerConnection, 0, "Set Envoy HTTP option max_requests_per_connection. Default 0 (disable)")
+	option.BindEnv(option.ProxyMaxRequestsPerConnection)
+
+	flags.Int64(option.ProxyMaxConnectionDuration, 0, "Set Envoy HTTP option max_connection_duration seconds. Default 0 (disable)")
+	option.BindEnv(option.ProxyMaxConnectionDuration)
 
 	flags.Bool(option.DisableEnvoyVersionCheck, false, "Do not perform Envoy binary version check on startup")
 	flags.MarkHidden(option.DisableEnvoyVersionCheck)
@@ -460,6 +472,9 @@ func initializeFlags() {
 
 	flags.Duration(option.IdentityChangeGracePeriod, defaults.IdentityChangeGracePeriod, "Time to wait before using new identity on endpoint identity change")
 	option.BindEnv(option.IdentityChangeGracePeriod)
+
+	flags.Duration(option.IdentityRestoreGracePeriod, defaults.IdentityRestoreGracePeriod, "Time to wait before releasing unused restored CIDR identities during agent restart")
+	option.BindEnv(option.IdentityRestoreGracePeriod)
 
 	flags.String(option.IdentityAllocationMode, option.IdentityAllocationModeKVstore, "Method to use for identity allocation")
 	option.BindEnv(option.IdentityAllocationMode)
@@ -570,8 +585,15 @@ func initializeFlags() {
 	flags.Bool(option.EnableSVCSourceRangeCheck, true, "Enable check of service source ranges (currently, only for LoadBalancer)")
 	option.BindEnv(option.EnableSVCSourceRangeCheck)
 
+	flags.String(option.AddressScopeMax, fmt.Sprintf("%d", defaults.AddressScopeMax), "Maximum local address scope for ipcache to consider host addresses")
+	flags.MarkHidden(option.AddressScopeMax)
+	option.BindEnv(option.AddressScopeMax)
+
 	flags.Bool(option.EnableBandwidthManager, false, "Enable BPF bandwidth manager")
 	option.BindEnv(option.EnableBandwidthManager)
+
+	flags.Bool(option.EnableBBR, false, "Enable BBR for the bandwidth manager")
+	option.BindEnv(option.EnableBBR)
 
 	flags.Bool(option.EnableRecorder, false, "Enable BPF datapath pcap recorder")
 	option.BindEnv(option.EnableRecorder)
@@ -710,6 +732,15 @@ func initializeFlags() {
 	flags.Bool(option.EnableIPv4EgressGateway, false, "Enable egress gateway for IPv4")
 	option.BindEnv(option.EnableIPv4EgressGateway)
 
+	flags.Bool(option.InstallEgressGatewayRoutes, false, "Install egress gateway IP rules and routes in order to properly steer egress gateway traffic to the correct ENI interface")
+	option.BindEnv(option.InstallEgressGatewayRoutes)
+
+	flags.Bool(option.EnableEnvoyConfig, false, "Enable Envoy Config CRDs")
+	option.BindEnv(option.EnableEnvoyConfig)
+
+	flags.Duration(option.EnvoyConfigTimeout, defaults.EnvoyConfigTimeout, "Timeout duration for Envoy Config acknowledgements")
+	option.BindEnv(option.EnvoyConfigTimeout)
+
 	flags.String(option.IPMasqAgentConfigPath, "/etc/config/ip-masq-agent", "ip-masq-agent configuration file path")
 	option.BindEnv(option.IPMasqAgentConfigPath)
 
@@ -741,6 +772,9 @@ func initializeFlags() {
 
 	flags.Int(option.MTUName, 0, "Overwrite auto-detected MTU of underlying network")
 	option.BindEnv(option.MTUName)
+
+	flags.String(option.ProcFs, "/proc", "Root's proc filesystem path")
+	option.BindEnv(option.ProcFs)
 
 	flags.Int(option.RouteMetric, 0, "Overwrite the metric used by cilium when adding routes to its 'cilium_host' device")
 	option.BindEnv(option.RouteMetric)
@@ -998,8 +1032,32 @@ func initializeFlags() {
 	flags.Int(option.FragmentsMapEntriesName, defaults.FragmentsMapEntries, "Maximum number of entries in fragments tracking map")
 	option.BindEnv(option.FragmentsMapEntriesName)
 
-	flags.Int(option.LBMapEntriesName, lbmap.MaxEntries, "Maximum number of entries in Cilium BPF lbmap")
+	flags.Int(option.LBMapEntriesName, lbmap.DefaultMaxEntries, "Maximum number of entries in Cilium BPF lbmap")
 	option.BindEnv(option.LBMapEntriesName)
+
+	flags.Int(option.LBServiceMapMaxEntries, 0, fmt.Sprintf("Maximum number of entries in Cilium BPF lbmap for services (if this isn't set, the value of --%s will be used.)", option.LBMapEntriesName))
+	flags.MarkHidden(option.LBServiceMapMaxEntries)
+	option.BindEnv(option.LBServiceMapMaxEntries)
+
+	flags.Int(option.LBBackendMapMaxEntries, 0, fmt.Sprintf("Maximum number of entries in Cilium BPF lbmap for service backends (if this isn't set, the value of --%s will be used.)", option.LBMapEntriesName))
+	flags.MarkHidden(option.LBBackendMapMaxEntries)
+	option.BindEnv(option.LBBackendMapMaxEntries)
+
+	flags.Int(option.LBRevNatMapMaxEntries, 0, fmt.Sprintf("Maximum number of entries in Cilium BPF lbmap for reverse NAT (if this isn't set, the value of --%s will be used.)", option.LBMapEntriesName))
+	flags.MarkHidden(option.LBRevNatMapMaxEntries)
+	option.BindEnv(option.LBRevNatMapMaxEntries)
+
+	flags.Int(option.LBAffinityMapMaxEntries, 0, fmt.Sprintf("Maximum number of entries in Cilium BPF lbmap for session affinities (if this isn't set, the value of --%s will be used.)", option.LBMapEntriesName))
+	flags.MarkHidden(option.LBAffinityMapMaxEntries)
+	option.BindEnv(option.LBAffinityMapMaxEntries)
+
+	flags.Int(option.LBSourceRangeMapMaxEntries, 0, fmt.Sprintf("Maximum number of entries in Cilium BPF lbmap for source ranges (if this isn't set, the value of --%s will be used.)", option.LBMapEntriesName))
+	flags.MarkHidden(option.LBSourceRangeMapMaxEntries)
+	option.BindEnv(option.LBSourceRangeMapMaxEntries)
+
+	flags.Int(option.LBMaglevMapMaxEntries, 0, fmt.Sprintf("Maximum number of entries in Cilium BPF lbmap for maglev (if this isn't set, the value of --%s will be used.)", option.LBMapEntriesName))
+	flags.MarkHidden(option.LBMaglevMapMaxEntries)
+	option.BindEnv(option.LBMaglevMapMaxEntries)
 
 	flags.String(option.LocalRouterIPv4, "", "Link-local IPv4 used for Cilium's router devices")
 	option.BindEnv(option.LocalRouterIPv4)
@@ -1068,12 +1126,18 @@ func initializeFlags() {
 	flags.StringSlice(option.VtepCIDR, []string{}, "List of VTEP CIDRs that will be routed towards VTEPs for traffic cluster egress")
 	option.BindEnv(option.VtepCIDR)
 
+	flags.String(option.VtepMask, "255.255.255.0", "VTEP CIDR Mask for all VTEP CIDRs")
+	option.BindEnv(option.VtepMask)
+
 	flags.StringSlice(option.VtepMAC, []string{}, "List of VTEP MAC addresses for forwarding traffic outside the cluster")
 	option.BindEnv(option.VtepMAC)
 
 	flags.Int(option.TCFilterPriority, 1, "Priority of TC BPF filter")
 	flags.MarkHidden(option.TCFilterPriority)
 	option.BindEnv(option.TCFilterPriority)
+
+	flags.Bool(option.EnableBGPControlPlane, false, "Enable the BGP control plane.")
+	option.BindEnv(option.EnableBGPControlPlane)
 
 	viper.BindPFlags(flags)
 }
@@ -1125,6 +1189,8 @@ func initEnv(cmd *cobra.Command) {
 	}
 
 	option.LogRegisteredOptions(log)
+
+	sysctl.SetProcfs(option.Config.ProcFs)
 
 	// Configure k8s as soon as possible so that k8s.IsEnabled() has the right
 	// behavior.
@@ -1610,7 +1676,7 @@ func (d *Daemon) initKVStore() {
 		)
 		log := log.WithField(logfields.LogSubsys, "etcd")
 		goopts.DialOption = []grpc.DialOption{
-			grpc.WithDialer(k8s.CreateCustomDialer(&d.k8sWatcher.K8sSvcCache, log)),
+			grpc.WithContextDialer(k8s.CreateCustomDialer(&d.k8sWatcher.K8sSvcCache, log)),
 		}
 	}
 
@@ -1628,6 +1694,7 @@ func (d *Daemon) initKVStore() {
 func runDaemon() {
 	datapathConfig := linuxdatapath.DatapathConfiguration{
 		HostDevice: defaults.HostDevice,
+		ProcFs:     option.Config.ProcFs,
 	}
 
 	log.Info("Initializing daemon")
@@ -1748,6 +1815,23 @@ func runDaemon() {
 			})
 			ms.CollectStaleMapGarbage()
 			ms.RemoveDisabledMaps()
+
+			if len(d.restoredCIDRs) > 0 {
+				// Release restored CIDR identities after a grace period (default 10
+				// minutes).  Any identities actually in use will still exist after
+				// this.
+				//
+				// This grace period is needed when running on an external workload
+				// where policy synchronization is not done via k8s. Also in k8s
+				// case it is prudent to allow concurrent endpoint regenerations to
+				// (re-)allocate the restored identities before we release them.
+				time.Sleep(option.Config.IdentityRestoreGracePeriod)
+				log.Debugf("Releasing reference counts for %d restored CIDR identities", len(d.restoredCIDRs))
+
+				d.ipcache.ReleaseCIDRIdentitiesByCIDR(d.restoredCIDRs)
+				// release the memory held by restored CIDRs
+				d.restoredCIDRs = nil
+			}
 		}()
 		d.endpointManager.Subscribe(d)
 		defer d.endpointManager.Unsubscribe(d)
@@ -1824,6 +1908,13 @@ func runDaemon() {
 		}
 	}
 
+	if option.Config.BGPControlPlaneEnabled() {
+		log.Info("Initializing BGP Control Plane")
+		if err := d.instantiateBGPControlPlane(d.ctx); err != nil {
+			log.WithError(err).Fatal("Error returned when instantiating BGP control plane")
+		}
+	}
+
 	log.WithField("bootstrapTime", time.Since(bootstrapTimestamp)).
 		Info("Daemon initialization completed")
 
@@ -1845,12 +1936,6 @@ func runDaemon() {
 	go func() {
 		errs <- srv.Serve()
 	}()
-
-	if k8s.IsEnabled() {
-		bootstrapStats.k8sInit.Start()
-		k8s.Client().MarkNodeReady(d.k8sWatcher, nodeTypes.GetName())
-		bootstrapStats.k8sInit.End(true)
-	}
 
 	bootstrapStats.overall.End(true)
 	bootstrapStats.updateMetrics()
@@ -1876,6 +1961,18 @@ func runDaemon() {
 			log.WithError(err).Fatal("Error returned from non-returning Serve() call")
 		}
 	}
+}
+
+func (d *Daemon) instantiateBGPControlPlane(ctx context.Context) error {
+	// goBGP is currently the only supported RouterManager, if more are
+	// implemented replace this hard-coding with a construction switch.
+	rm := gobgp.NewBGPRouterManager()
+	ctrl, err := bgpv1.NewController(d.ctx, rm)
+	if err != nil {
+		return fmt.Errorf("failed to instantiate BGP Control Plane: %v", err)
+	}
+	d.bgpControlPlaneController = ctrl
+	return nil
 }
 
 func (d *Daemon) instantiateAPI() *restapi.CiliumAPIAPI {

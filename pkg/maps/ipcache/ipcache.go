@@ -13,7 +13,6 @@ import (
 	"golang.org/x/sys/unix"
 
 	"github.com/cilium/cilium/pkg/bpf"
-	"github.com/cilium/cilium/pkg/cidr"
 	"github.com/cilium/cilium/pkg/logging"
 	"github.com/cilium/cilium/pkg/logging/logfields"
 	"github.com/cilium/cilium/pkg/types"
@@ -81,6 +80,20 @@ func (k Key) String() string {
 		return fmt.Sprintf("%s/%d", ipStr, prefixLen)
 	}
 	return "<unknown>"
+}
+
+func (k Key) IPNet() *net.IPNet {
+	cidr := &net.IPNet{}
+	prefixLen := k.Prefixlen - getStaticPrefixBits()
+	switch k.Family {
+	case bpf.EndpointKeyIPv4:
+		cidr.IP = net.IP(k.IP[:net.IPv4len])
+		cidr.Mask = net.CIDRMask(int(prefixLen), 32)
+	case bpf.EndpointKeyIPv6:
+		cidr.IP = net.IP(k.IP[:net.IPv6len])
+		cidr.Mask = net.CIDRMask(int(prefixLen), 128)
+	}
+	return cidr
 }
 
 // getPrefixLen determines the length that should be set inside the Key so that
@@ -210,13 +223,16 @@ func (m *Map) supportsDelete() bool {
 		m.deleteSupport, _ = m.delete(invalidEntry, false)
 		log.Debugf("Detected IPCache delete operation support: %t", m.deleteSupport)
 
+		// Detect dump support
+		err := m.Dump(map[string][]string{})
+		dumpSupport := err == nil
+		log.Debugf("Detected IPCache dump operation support: %t", dumpSupport)
+
 		// In addition to delete support, ability to dump the map is
 		// also required in order to run the garbage collector which
 		// will iterate over the map and delete entries.
 		if m.deleteSupport {
-			err := m.Dump(map[string][]string{})
-			m.deleteSupport = err == nil
-			log.Debugf("Detected IPCache dump operation support: %t", m.deleteSupport)
+			m.deleteSupport = dumpSupport
 		}
 
 		if !m.deleteSupport {
@@ -249,22 +265,4 @@ var (
 // on the filesystem.
 func Reopen() error {
 	return IPCache.Map.Reopen()
-}
-
-// Function to update IPCache map with VTEP CIDR
-func UpdateIPCacheVTEPMapping(newCIDR *cidr.CIDR, newTunnelEndpoint net.IP,
-	securityIdentity uint32, encryptKey uint8) error {
-
-	key := NewKey(newCIDR.IP, newCIDR.Mask)
-
-	value := RemoteEndpointInfo{
-		SecurityIdentity: securityIdentity,
-		Key:              encryptKey,
-	}
-	if ip4 := newTunnelEndpoint.To4(); ip4 != nil {
-		copy(value.TunnelEndpoint[:], ip4)
-	}
-
-	return IPCache.Update(&key, &value)
-
 }

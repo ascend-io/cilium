@@ -13,6 +13,7 @@ import (
 	operatorOption "github.com/cilium/cilium/operator/option"
 	"github.com/cilium/cilium/pkg/defaults"
 	ipamOption "github.com/cilium/cilium/pkg/ipam/option"
+	ciliumio "github.com/cilium/cilium/pkg/k8s/apis/cilium.io"
 	"github.com/cilium/cilium/pkg/option"
 )
 
@@ -34,6 +35,10 @@ func init() {
 	flags.StringSliceVar(&operatorOption.Config.IPAMSubnetsIDs, operatorOption.IPAMSubnetsIDs, operatorOption.Config.IPAMSubnetsIDs,
 		"Subnets IDs (separated by commas)")
 	option.BindEnv(operatorOption.IPAMSubnetsIDs)
+
+	flags.StringToStringVar(&operatorOption.Config.IPAMInstanceTags, operatorOption.IPAMInstanceTags, operatorOption.Config.IPAMInstanceTags,
+		"EC2 Instance tags in the form of k1=v1,k2=v2 (multiple k/v pairs can also be passed by repeating the CLI flag")
+	option.BindEnv(operatorOption.IPAMInstanceTags)
 
 	flags.Int64(operatorOption.ParallelAllocWorkers, defaults.ParallelAllocWorkers, "Maximum number of parallel IPAM workers")
 	option.BindEnv(operatorOption.ParallelAllocWorkers)
@@ -317,6 +322,18 @@ func init() {
 	flags.String(operatorOption.CESSlicingMode, operatorOption.CESSlicingModeDefault, "Slicing mode define how ceps are grouped into a CES")
 	flags.MarkHidden(operatorOption.CESSlicingMode)
 	option.BindEnv(operatorOption.CESSlicingMode)
+
+	flags.String(operatorOption.CiliumK8sNamespace, "", fmt.Sprintf("Name of the Kubernetes namespace in which Cilium is deployed in. Defaults to the same namespace defined in %s", option.K8sNamespaceName))
+	option.BindEnv(operatorOption.CiliumK8sNamespace)
+
+	flags.String(operatorOption.CiliumPodLabels, "k8s-app=cilium", "Cilium Pod's labels. Used to detect if a Cilium pod is running to remove the node taints where its running and set NetworkUnavailable to false")
+	option.BindEnv(operatorOption.CiliumPodLabels)
+
+	flags.Bool(operatorOption.RemoveCiliumNodeTaints, true, fmt.Sprintf("Remove node taint %q from Kubernetes nodes once Cilium is up and running", ciliumio.AgentNotReadyNodeTaint))
+	option.BindEnv(operatorOption.RemoveCiliumNodeTaints)
+
+	flags.Bool(operatorOption.SetCiliumIsUpCondition, true, "Set CiliumIsUp Node condition to mark a Kubernetes Node that a Cilium pod is up and running in that node")
+	option.BindEnv(operatorOption.SetCiliumIsUpCondition)
 
 	viper.BindPFlags(flags)
 }

@@ -29,6 +29,7 @@ import (
 	"github.com/cilium/cilium/pkg/option"
 	"github.com/cilium/cilium/pkg/policy"
 	"github.com/cilium/cilium/pkg/policy/api"
+	"github.com/cilium/cilium/pkg/service"
 )
 
 // Hook up gocheck into the "go test" runner.
@@ -168,6 +169,18 @@ func (f *fakeSvcManager) UpsertService(p *loadbalancer.SVC) (bool, loadbalancer.
 	panic("OnUpsertService() was called and is not set!")
 }
 
+func (f *fakeSvcManager) RegisterL7LBService(serviceName, resourceName service.Name, proxyPort uint16) error {
+	return nil
+}
+
+func (f *fakeSvcManager) RegisterL7LBServiceBackendSync(serviceName, resourceName service.Name) error {
+	return nil
+}
+
+func (f *fakeSvcManager) RemoveL7LBService(serviceName, resourceName service.Name) error {
+	return nil
+}
+
 func (s *K8sWatcherSuite) TestUpdateToServiceEndpointsGH9525(c *C) {
 
 	ep1stApply := &slim_corev1.Endpoints{
@@ -229,6 +242,7 @@ func (s *K8sWatcherSuite) TestUpdateToServiceEndpointsGH9525(c *C) {
 		policyRepository,
 		nil,
 		fakeDatapath.NewDatapath(),
+		nil,
 		nil,
 		nil,
 		nil,
@@ -539,6 +553,7 @@ func (s *K8sWatcherSuite) Test_addK8sSVCs_ClusterIP(c *C) {
 		nil,
 		nil,
 		nil,
+		nil,
 		&fakeWatcherConfiguration{},
 		ipcache.NewIPCache(nil),
 	)
@@ -680,6 +695,7 @@ func (s *K8sWatcherSuite) TestChangeSVCPort(c *C) {
 		policyRepository,
 		svcManager,
 		fakeDatapath.NewDatapath(),
+		nil,
 		nil,
 		nil,
 		nil,
@@ -1133,6 +1149,7 @@ func (s *K8sWatcherSuite) Test_addK8sSVCs_NodePort(c *C) {
 		nil,
 		nil,
 		nil,
+		nil,
 		&fakeWatcherConfiguration{},
 		ipcache.NewIPCache(nil),
 	)
@@ -1430,6 +1447,7 @@ func (s *K8sWatcherSuite) Test_addK8sSVCs_GH9576_1(c *C) {
 		nil,
 		nil,
 		nil,
+		nil,
 		&fakeWatcherConfiguration{},
 		ipcache.NewIPCache(nil),
 	)
@@ -1717,6 +1735,7 @@ func (s *K8sWatcherSuite) Test_addK8sSVCs_GH9576_2(c *C) {
 		policyRepository,
 		svcManager,
 		fakeDatapath.NewDatapath(),
+		nil,
 		nil,
 		nil,
 		nil,
@@ -2572,6 +2591,7 @@ func (s *K8sWatcherSuite) Test_addK8sSVCs_ExternalIPs(c *C) {
 		policyRepository,
 		svcManager,
 		fakeDatapath.NewDatapath(),
+		nil,
 		nil,
 		nil,
 		nil,

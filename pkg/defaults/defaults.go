@@ -5,11 +5,17 @@ package defaults
 
 import (
 	"time"
+
+	"github.com/vishvananda/netlink"
 )
 
 const (
 	// AgentHealthPort is the default value for option.AgentHealthPort
 	AgentHealthPort = 9876
+
+	// AddressScopeMax controls the maximum address scope for addresses to be
+	// considered local ones with HOST_ID in the ipcache
+	AddressScopeMax = int(netlink.SCOPE_LINK) - 1
 
 	// ClusterHealthPort is the default value for option.ClusterHealthPort
 	ClusterHealthPort = 4240
@@ -139,6 +145,10 @@ const (
 	// option.IdentityChangeGracePeriod
 	IdentityChangeGracePeriod = 5 * time.Second
 
+	// IdentityRestoreGracePeriod is the default value for
+	// option.IdentityRestoreGracePeriod
+	IdentityRestoreGracePeriod = 10 * time.Minute
+
 	// ExecTimeout is a timeout for executing commands.
 	ExecTimeout = 300 * time.Second
 
@@ -164,6 +174,9 @@ const (
 
 	// EnableL7Proxy is the default value for L7 proxy enablement
 	EnableL7Proxy = true
+
+	// EnvoyConfigTimeout determines how long to wait Envoy to N/ACK resources
+	EnvoyConfigTimeout = 2 * time.Minute
 
 	// EnableHostLegacyRouting is the default value for using the old routing path via stack.
 	EnableHostLegacyRouting = false
@@ -301,7 +314,7 @@ const (
 	// AnnotateK8sNode is the default value for option.AnnotateK8sNode. It is
 	// enabled by default to annotate kubernetes node and can be disabled using
 	// the provided option.
-	AnnotateK8sNode = true
+	AnnotateK8sNode = false
 
 	// MonitorBufferPages is the default number of pages to use for the
 	// ring buffer interacting with the kernel
@@ -450,5 +463,9 @@ const (
 	ARPBaseReachableTime = 30 * time.Second
 
 	// EnableVTEP enables VXLAN Tunnel Endpoint (VTEP) Integration
-	EnableVTEP = false
+	EnableVTEP     = false
+	MaxVTEPDevices = 8
+
+	// Enable BGP control plane features.
+	EnableBGPControlPlane = false
 )

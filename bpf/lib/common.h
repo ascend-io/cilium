@@ -303,6 +303,15 @@ struct egress_gw_policy_entry {
 	__u32 gateway_ip;
 };
 
+struct vtep_key {
+	__u32 vtep_ip;
+};
+
+struct vtep_value {
+	__u64 vtep_mac;
+	__u32 tunnel_endpoint;
+};
+
 enum {
 	POLICY_INGRESS = 1,
 	POLICY_EGRESS = 2,
@@ -475,6 +484,9 @@ enum metric_dir {
  * packets security identity. The lower/upper halves are swapped to recover
  * the identity.
  *
+ * In case of MARK_MAGIC_PROXY_EGRESS_EPID the upper 16 bits carry the Endpoint
+ * ID instead of the security identity and the lower 8 bits will be zeroes.
+ *
  * The 4 bits at 0X0F00 provide
  *  - the magic marker values which indicate whether the packet is coming from
  *    an ingress or egress proxy, a local process and its current encryption
@@ -485,6 +497,7 @@ enum metric_dir {
  *    In the IPsec case this becomes the SPI on the wire.
  */
 #define MARK_MAGIC_HOST_MASK		0x0F00
+#define MARK_MAGIC_PROXY_EGRESS_EPID	0x0900 /* mark carries source endpoint ID */
 #define MARK_MAGIC_PROXY_INGRESS	0x0A00
 #define MARK_MAGIC_PROXY_EGRESS		0x0B00
 #define MARK_MAGIC_HOST			0x0C00
@@ -603,6 +616,12 @@ enum {
 #define	CB_CUSTOM_CALLS		CB_CT_STATE	/* Alias, non-overlapping */
 };
 
+/* Magic values for CB_FROM_HOST.
+ * CB_FROM_HOST overlaps with CB_NAT46_STATE, so this value must be distinct
+ * from any in enum NAT46 below!
+ */
+#define FROM_HOST_L7_LB 0xFACADE42
+
 #define TUPLE_F_OUT		0	/* Outgoing flow */
 #define TUPLE_F_IN		1	/* Incoming flow */
 #define TUPLE_F_RELATED		2	/* Flow represents related packets */
@@ -642,8 +661,9 @@ enum {
 
 /* Service flags (lb{4,6}_service->flags2) */
 enum {
-	SVC_FLAG_LOCALREDIRECT = (1 << 0),  /* local redirect */
-	SVC_FLAG_NAT_46X64     = (1 << 1),  /* NAT-46/64 entry */
+	SVC_FLAG_LOCALREDIRECT  = (1 << 0),  /* local redirect */
+	SVC_FLAG_NAT_46X64      = (1 << 1),  /* NAT-46/64 entry */
+	SVC_FLAG_L7LOADBALANCER = (1 << 2),  /* tproxy redirect to local l7 loadbalancer */
 };
 
 struct ipv6_ct_tuple {
@@ -697,7 +717,8 @@ struct ct_entry {
 	      node_port:1,
 	      proxy_redirect:1, /* Connection is redirected to a proxy */
 	      dsr:1,
-	      reserved:8;
+	      from_l7lb:1, /* Connection is originated from an L7 LB proxy */
+	      reserved:7;
 	__u16 rev_nat_index;
 	/* In the kernel ifindex is u32, so we need to check in cilium-agent
 	 * that ifindex of a NodePort device is <= MAX(u16).
@@ -733,6 +754,7 @@ struct lb6_service {
 	union {
 		__u32 backend_id;	/* Backend ID in lb6_backends */
 		__u32 affinity_timeout;	/* In seconds, only for svc frontend */
+		__u32 l7_lb_proxy_port;	/* In host byte order, only when flags2 && SVC_FLAG_L7LOADBALANCER */
 	};
 	__u16 count;
 	__u16 rev_nat_index;
@@ -746,7 +768,7 @@ struct lb6_backend {
 	union v6addr address;
 	__be16 port;
 	__u8 proto;
-	__u8 pad;
+	__u8 flags;
 };
 
 struct lb6_health {
@@ -782,8 +804,9 @@ struct lb4_key {
 
 struct lb4_service {
 	union {
-		__u32 backend_id;		/* Backend ID in lb4_backends */
-		__u32 affinity_timeout;		/* In seconds, only for svc frontend */
+		__u32 backend_id;	/* Backend ID in lb4_backends */
+		__u32 affinity_timeout;	/* In seconds, only for svc frontend */
+		__u32 l7_lb_proxy_port;	/* In host byte order, only when flags2 && SVC_FLAG_L7LOADBALANCER */
 	};
 	/* For the service frontend, count denotes number of service backend
 	 * slots (otherwise zero).
@@ -799,7 +822,7 @@ struct lb4_backend {
 	__be32 address;		/* Service endpoint IPv4 address */
 	__be16 port;		/* L4 port filter */
 	__u8 proto;		/* L4 protocol, currently not used (set to 0) */
-	__u8 pad;
+	__u8 flags;
 };
 
 struct lb4_health {
@@ -870,13 +893,23 @@ struct ct_state {
 	      node_port:1,
 	      proxy_redirect:1, /* Connection is redirected to a proxy */
 	      dsr:1,
-	      reserved:12;
+	      from_l7lb:1, /* Connection is originated from an L7 LB proxy */
+	      reserved:11;
 	__be32 addr;
 	__be32 svc_addr;
 	__u32 src_sec_id;
 	__u16 ifindex;
 	__u32 backend_id;	/* Backend ID in lb4_backends */
 };
+
+static __always_inline bool ct_state_is_from_l7lb(const struct ct_state *ct_state __maybe_unused)
+{
+#ifdef ENABLE_L7_LB
+	return ct_state->from_l7lb;
+#else
+	return false;
+#endif
+}
 
 #define SRC_RANGE_STATIC_PREFIX(STRUCT)		\
 	(8 * (sizeof(STRUCT) - sizeof(struct bpf_lpm_trie_key)))

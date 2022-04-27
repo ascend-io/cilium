@@ -12,8 +12,6 @@ import (
 	"io"
 	"net"
 	"sort"
-	"strconv"
-	"strings"
 	"text/template"
 
 	"github.com/sirupsen/logrus"
@@ -53,6 +51,7 @@ import (
 	"github.com/cilium/cilium/pkg/maps/signalmap"
 	"github.com/cilium/cilium/pkg/maps/sockmap"
 	"github.com/cilium/cilium/pkg/maps/tunnel"
+	"github.com/cilium/cilium/pkg/maps/vtep"
 	"github.com/cilium/cilium/pkg/netns"
 	"github.com/cilium/cilium/pkg/node"
 	"github.com/cilium/cilium/pkg/option"
@@ -132,7 +131,13 @@ func (h *HeaderfileWriter) WriteNodeConfig(w io.Writer, cfg *datapath.LocalNodeC
 	cDefinesMap["LOCAL_NODE_ID"] = fmt.Sprintf("%d", identity.GetLocalNodeID())
 	cDefinesMap["REMOTE_NODE_ID"] = fmt.Sprintf("%d", identity.GetReservedID(labels.IDNameRemoteNode))
 	cDefinesMap["KUBE_APISERVER_NODE_ID"] = fmt.Sprintf("%d", identity.GetReservedID(labels.IDNameKubeAPIServer))
-	cDefinesMap["CILIUM_LB_MAP_MAX_ENTRIES"] = fmt.Sprintf("%d", lbmap.MaxEntries)
+	cDefinesMap["CILIUM_LB_SERVICE_MAP_MAX_ENTRIES"] = fmt.Sprintf("%d", lbmap.ServiceMapMaxEntries)
+	cDefinesMap["CILIUM_LB_BACKENDS_MAP_MAX_ENTRIES"] = fmt.Sprintf("%d", lbmap.ServiceBackEndMapMaxEntries)
+	cDefinesMap["CILIUM_LB_REV_NAT_MAP_MAX_ENTRIES"] = fmt.Sprintf("%d", lbmap.RevNatMapMaxEntries)
+	cDefinesMap["CILIUM_LB_AFFINITY_MAP_MAX_ENTRIES"] = fmt.Sprintf("%d", lbmap.AffinityMapMaxEntries)
+	cDefinesMap["CILIUM_LB_SOURCE_RANGE_MAP_MAX_ENTRIES"] = fmt.Sprintf("%d", lbmap.SourceRangeMapMaxEntries)
+	cDefinesMap["CILIUM_LB_MAGLEV_MAP_MAX_ENTRIES"] = fmt.Sprintf("%d", lbmap.MaglevMapMaxEntries)
+
 	cDefinesMap["TUNNEL_MAP"] = tunnel.MapName
 	cDefinesMap["TUNNEL_ENDPOINT_MAP_SIZE"] = fmt.Sprintf("%d", tunnel.MaxEntries)
 	cDefinesMap["ENDPOINTS_MAP"] = lxcmap.MapName
@@ -168,6 +173,9 @@ func (h *HeaderfileWriter) WriteNodeConfig(w io.Writer, cfg *datapath.LocalNodeC
 	cDefinesMap["EVENTS_MAP"] = eventsmap.MapName
 	cDefinesMap["SIGNAL_MAP"] = signalmap.MapName
 	cDefinesMap["POLICY_CALL_MAP"] = policymap.PolicyCallMapName
+	if option.Config.EnableEnvoyConfig {
+		cDefinesMap["POLICY_EGRESSCALL_MAP"] = policymap.PolicyEgressCallMapName
+	}
 	cDefinesMap["EP_POLICY_MAP"] = eppolicymap.MapName
 	cDefinesMap["LB6_REVERSE_NAT_MAP"] = "cilium_lb6_reverse_nat"
 	cDefinesMap["LB6_SERVICES_MAP_V2"] = "cilium_lb6_services_v2"
@@ -232,6 +240,10 @@ func (h *HeaderfileWriter) WriteNodeConfig(w io.Writer, cfg *datapath.LocalNodeC
 
 	if option.Config.EnableEndpointRoutes {
 		cDefinesMap["ENABLE_ENDPOINT_ROUTES"] = "1"
+	}
+
+	if option.Config.EnableEnvoyConfig {
+		cDefinesMap["ENABLE_L7_LB"] = "1"
 	}
 
 	if option.Config.EnableHostReachableServices {
@@ -542,34 +554,10 @@ func (h *HeaderfileWriter) WriteNodeConfig(w io.Writer, cfg *datapath.LocalNodeC
 
 	if option.Config.EnableVTEP {
 		cDefinesMap["ENABLE_VTEP"] = "1"
+		cDefinesMap["VTEP_MAP"] = vtep.Name
+		cDefinesMap["VTEP_MAP_SIZE"] = fmt.Sprintf("%d", vtep.MaxEntries)
+		cDefinesMap["VTEP_MASK"] = fmt.Sprintf("%#x", byteorder.NetIPv4ToHost32(net.IP(option.Config.VtepCidrMask)))
 
-		l := len(option.Config.VtepEndpoints)
-		cDefinesMap["VTEP_NUMS"] = strconv.Itoa(l)
-
-		var (
-			ipb  strings.Builder
-			macb strings.Builder
-		)
-
-		ipb.WriteString("(__u32[]){ ")
-		macb.WriteString("(__u64[]){ ")
-
-		for i, ep := range option.Config.VtepEndpoints {
-			fmt.Fprintf(&ipb, "%#x, ", byteorder.NetIPv4ToHost32(ep))
-
-			mac := option.Config.VtepMACs[i]
-			vtep_mac, err := mac.Uint64()
-			if err != nil {
-				return err
-			}
-			fmt.Fprintf(&macb, "%#x, ", vtep_mac)
-		}
-
-		ipb.WriteString("}")
-		macb.WriteString("}")
-
-		cDefinesMap["VTEP_ENDPOINT"] = ipb.String()
-		cDefinesMap["VTEP_MAC"] = macb.String()
 	}
 
 	vlanFilter, err := vlanFilterMacros()
@@ -583,7 +571,7 @@ func (h *HeaderfileWriter) WriteNodeConfig(w io.Writer, cfg *datapath.LocalNodeC
 	}
 
 	// Since golang maps are unordered, we sort the keys in the map
-	// to get a consistent writtern format to the writer. This maintains
+	// to get a consistent written format to the writer. This maintains
 	// the consistency when we try to calculate hash for a datapath after
 	// writing the config.
 	keys := []string{}

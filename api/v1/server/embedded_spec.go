@@ -1426,6 +1426,13 @@ func init() {
               "$ref": "#/definitions/Error"
             },
             "x-go-name": "Failure"
+          },
+          "501": {
+            "description": "Error while updating backend states",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            },
+            "x-go-name": "UpdateBackendFailure"
           }
         }
       },
@@ -1598,6 +1605,16 @@ func init() {
           "description": "Layer 4 port number",
           "type": "integer",
           "format": "uint16"
+        },
+        "state": {
+          "description": "State of the backend for load-balancing service traffic",
+          "type": "string",
+          "enum": [
+            "active",
+            "terminating",
+            "quarantined",
+            "maintenance"
+          ]
         }
       }
     },
@@ -1605,6 +1622,13 @@ func init() {
       "description": "Status of bandwidth manager\n\n+k8s:deepcopy-gen=true",
       "type": "object",
       "properties": {
+        "congestionControl": {
+          "type": "string",
+          "enum": [
+            "cubic",
+            "bbr"
+          ]
+        },
         "devices": {
           "type": "array",
           "items": {
@@ -1869,7 +1893,7 @@ func init() {
           }
         },
         "lookup-time": {
-          "description": "The absolute time when this data was recieved",
+          "description": "The absolute time when this data was received",
           "type": "string",
           "format": "date-time"
         },
@@ -3865,6 +3889,10 @@ func init() {
         "id": {
           "description": "Unique identification",
           "type": "integer"
+        },
+        "updateServices": {
+          "description": "Update all services selecting the backends with their given states\n(id and frontend are ignored)\n",
+          "type": "boolean"
         }
       }
     },
@@ -5845,6 +5873,13 @@ func init() {
               "$ref": "#/definitions/Error"
             },
             "x-go-name": "Failure"
+          },
+          "501": {
+            "description": "Error while updating backend states",
+            "schema": {
+              "$ref": "#/definitions/Error"
+            },
+            "x-go-name": "UpdateBackendFailure"
           }
         }
       },
@@ -6021,6 +6056,16 @@ func init() {
           "description": "Layer 4 port number",
           "type": "integer",
           "format": "uint16"
+        },
+        "state": {
+          "description": "State of the backend for load-balancing service traffic",
+          "type": "string",
+          "enum": [
+            "active",
+            "terminating",
+            "quarantined",
+            "maintenance"
+          ]
         }
       }
     },
@@ -6028,6 +6073,13 @@ func init() {
       "description": "Status of bandwidth manager\n\n+k8s:deepcopy-gen=true",
       "type": "object",
       "properties": {
+        "congestionControl": {
+          "type": "string",
+          "enum": [
+            "cubic",
+            "bbr"
+          ]
+        },
         "devices": {
           "type": "array",
           "items": {
@@ -6344,7 +6396,7 @@ func init() {
           }
         },
         "lookup-time": {
-          "description": "The absolute time when this data was recieved",
+          "description": "The absolute time when this data was received",
           "type": "string",
           "format": "date-time"
         },
@@ -8627,6 +8679,10 @@ func init() {
         "id": {
           "description": "Unique identification",
           "type": "integer"
+        },
+        "updateServices": {
+          "description": "Update all services selecting the backends with their given states\n(id and frontend are ignored)\n",
+          "type": "boolean"
         }
       }
     },

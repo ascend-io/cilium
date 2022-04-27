@@ -39,6 +39,7 @@ import (
 	"github.com/cilium/cilium/pkg/maps/policymap"
 	"github.com/cilium/cilium/pkg/maps/signalmap"
 	"github.com/cilium/cilium/pkg/maps/tunnel"
+	"github.com/cilium/cilium/pkg/maps/vtep"
 	"github.com/cilium/cilium/pkg/node"
 	"github.com/cilium/cilium/pkg/option"
 	"github.com/cilium/cilium/pkg/source"
@@ -140,7 +141,7 @@ type EndpointMapManager struct {
 // packets that arrive on this node from being forwarded to the endpoint that
 // used to exist with the specified ID.
 func (e *EndpointMapManager) RemoveDatapathMapping(endpointID uint16) error {
-	return policymap.RemoveGlobalMapping(uint32(endpointID))
+	return policymap.RemoveGlobalMapping(uint32(endpointID), option.Config.EnableEnvoyConfig)
 }
 
 // RemoveMapPath removes the specified path from the filesystem.
@@ -270,7 +271,7 @@ func (d *Daemon) syncEndpointsAndHostIPs() error {
 	}
 
 	if option.Config.EnableVTEP {
-		err := setupIPCacheVTEPMapping()
+		err := setupVTEPMapping()
 		if err != nil {
 			return err
 		}
@@ -331,6 +332,12 @@ func (d *Daemon) initMaps() error {
 		}
 	}
 
+	if option.Config.EnableVTEP {
+		if _, err := vtep.VtepMAP.OpenOrCreate(); err != nil {
+			return err
+		}
+	}
+
 	pm := probes.NewProbeManager()
 	supportedMapTypes := pm.GetMapTypes()
 	createSockRevNatMaps := option.Config.EnableHostReachableServices &&
@@ -350,7 +357,7 @@ func (d *Daemon) initMaps() error {
 		return err
 	}
 
-	if err := policymap.InitCallMap(); err != nil {
+	if err := policymap.InitCallMaps(option.Config.EnableEnvoyConfig); err != nil {
 		return err
 	}
 
@@ -485,16 +492,13 @@ func setupIPSec() (int, uint8, error) {
 	return authKeySize, spi, nil
 }
 
-func setupIPCacheVTEPMapping() error {
-	encryptKey := uint8(0)                           // no encrypt support
-	vtepID := uint32(identity.ReservedIdentityWorld) //network policy identity for VTEP
-
+func setupVTEPMapping() error {
 	for i, ep := range option.Config.VtepEndpoints {
 		log.WithFields(logrus.Fields{
 			logfields.IPAddr: ep,
-		}).Debug("Updating ipcache map entry for VTEP")
+		}).Debug("Updating vtep map entry for VTEP")
 
-		err := ipcachemap.UpdateIPCacheVTEPMapping(option.Config.VtepCIDRs[i], ep, vtepID, encryptKey)
+		err := vtep.UpdateVTEPMapping(option.Config.VtepCIDRs[i], ep, option.Config.VtepMACs[i])
 		if err != nil {
 			return fmt.Errorf("Unable to set up VTEP ipcache mappings: %w", err)
 		}

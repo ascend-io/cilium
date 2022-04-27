@@ -141,9 +141,9 @@ func (e *Endpoint) writeInformationalComments(w io.Writer) error {
 	return fw.Flush()
 }
 
-// writeHeaderfile writes the lxc_config.h header file of an endpoint
+// writeHeaderfile writes the lxc_config.h header file of an endpoint.
 //
-// e.mutex must be RLock()ed.
+// e.mutex must be write-locked.
 func (e *Endpoint) writeHeaderfile(prefix string) error {
 	headerPath := filepath.Join(prefix, common.CHeaderFileName)
 	e.getLogger().WithFields(logrus.Fields{
@@ -985,7 +985,7 @@ func (e *Endpoint) deleteMaps() []error {
 	}
 
 	// Remove handle_policy() tail call entry for EP
-	if err := policymap.RemoveGlobalMapping(uint32(e.ID)); err != nil {
+	if err := policymap.RemoveGlobalMapping(uint32(e.ID), option.Config.EnableEnvoyConfig); err != nil {
 		errors = append(errors, fmt.Errorf("unable to remove endpoint from global policy map: %s", err))
 	}
 

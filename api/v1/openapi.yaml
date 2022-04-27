@@ -643,6 +643,11 @@ paths:
           x-go-name: Failure
           schema:
             "$ref": "#/definitions/Error"
+        '501':
+          description: Error while updating backend states
+          x-go-name: UpdateBackendFailure
+          schema:
+            "$ref": "#/definitions/Error"
     delete:
       summary: Delete a service
       tags:
@@ -2478,6 +2483,14 @@ definitions:
       nodeName:
         description: Optional name of the node on which this backend runs
         type: string
+      state:
+        description: State of the backend for load-balancing service traffic
+        type: string
+        enum:
+          - active
+          - terminating
+          - quarantined
+          - maintenance
   LRPBackend:
     description: Pod backend of an LRP
     type: object
@@ -2587,6 +2600,12 @@ definitions:
           namespace:
             description: Service namespace  (e.g. Kubernetes namespace)
             type: string
+      updateServices:
+        description: |
+          Update all services selecting the backends with their given states
+          (id and frontend are ignored)
+        type: boolean
+
   ServiceStatus:
     description: Configuration of a service
     type: object
@@ -2800,6 +2819,11 @@ definitions:
         type: array
         items:
           type: string
+      congestionControl:
+        type: string
+        enum:
+        - cubic
+        - bbr
   Masquerading:
     description: |-
       Status of masquerading
@@ -3059,7 +3083,7 @@ definitions:
         description: The TTL in the DNS response
         type: integer
       lookup-time:
-        description: The absolute time when this data was recieved
+        description: The absolute time when this data was received
         type: string
         format: date-time
       expiration-time:

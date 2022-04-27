@@ -17,7 +17,7 @@ struct {
 	__type(key, __u16);
 	__type(value, struct lb6_reverse_nat);
 	__uint(pinning, LIBBPF_PIN_BY_NAME);
-	__uint(max_entries, CILIUM_LB_MAP_MAX_ENTRIES);
+	__uint(max_entries, CILIUM_LB_REV_NAT_MAP_MAX_ENTRIES);
 	__uint(map_flags, CONDITIONAL_PREALLOC);
 } LB6_REVERSE_NAT_MAP __section_maps_btf;
 
@@ -26,7 +26,7 @@ struct {
 	__type(key, struct lb6_key);
 	__type(value, struct lb6_service);
 	__uint(pinning, LIBBPF_PIN_BY_NAME);
-	__uint(max_entries, CILIUM_LB_MAP_MAX_ENTRIES);
+	__uint(max_entries, CILIUM_LB_SERVICE_MAP_MAX_ENTRIES);
 	__uint(map_flags, CONDITIONAL_PREALLOC);
 } LB6_SERVICES_MAP_V2 __section_maps_btf;
 
@@ -35,7 +35,7 @@ struct {
 	__type(key, __u32);
 	__type(value, struct lb6_backend);
 	__uint(pinning, LIBBPF_PIN_BY_NAME);
-	__uint(max_entries, CILIUM_LB_MAP_MAX_ENTRIES);
+	__uint(max_entries, CILIUM_LB_BACKENDS_MAP_MAX_ENTRIES);
 	__uint(map_flags, CONDITIONAL_PREALLOC);
 } LB6_BACKEND_MAP_V2 __section_maps_btf;
 
@@ -45,7 +45,7 @@ struct {
 	__type(key, struct lb6_affinity_key);
 	__type(value, struct lb_affinity_val);
 	__uint(pinning, LIBBPF_PIN_BY_NAME);
-	__uint(max_entries, CILIUM_LB_MAP_MAX_ENTRIES);
+	__uint(max_entries, CILIUM_LB_AFFINITY_MAP_MAX_ENTRIES);
 } LB6_AFFINITY_MAP __section_maps_btf;
 #endif
 
@@ -66,7 +66,7 @@ struct {
 	__type(key, __sock_cookie);
 	__type(value, struct lb6_health);
 	__uint(pinning, LIBBPF_PIN_BY_NAME);
-	__uint(max_entries, CILIUM_LB_MAP_MAX_ENTRIES);
+	__uint(max_entries, CILIUM_LB_BACKENDS_MAP_MAX_ENTRIES);
 } LB6_HEALTH_MAP __section_maps_btf;
 #endif
 
@@ -76,7 +76,7 @@ struct {
 	__type(key, __u16);
 	__type(value, __u32);
 	__uint(pinning, LIBBPF_PIN_BY_NAME);
-	__uint(max_entries, CILIUM_LB_MAP_MAX_ENTRIES);
+	__uint(max_entries, CILIUM_LB_MAGLEV_MAP_MAX_ENTRIES);
 	__uint(map_flags, CONDITIONAL_PREALLOC);
 	/* Maglev inner map definition */
 	__array(values, struct {
@@ -95,7 +95,7 @@ struct {
 	__type(key, __u16);
 	__type(value, struct lb4_reverse_nat);
 	__uint(pinning, LIBBPF_PIN_BY_NAME);
-	__uint(max_entries, CILIUM_LB_MAP_MAX_ENTRIES);
+	__uint(max_entries, CILIUM_LB_REV_NAT_MAP_MAX_ENTRIES);
 	__uint(map_flags, CONDITIONAL_PREALLOC);
 } LB4_REVERSE_NAT_MAP __section_maps_btf;
 
@@ -104,7 +104,7 @@ struct {
 	__type(key, struct lb4_key);
 	__type(value, struct lb4_service);
 	__uint(pinning, LIBBPF_PIN_BY_NAME);
-	__uint(max_entries, CILIUM_LB_MAP_MAX_ENTRIES);
+	__uint(max_entries, CILIUM_LB_SERVICE_MAP_MAX_ENTRIES);
 	__uint(map_flags, CONDITIONAL_PREALLOC);
 } LB4_SERVICES_MAP_V2 __section_maps_btf;
 
@@ -113,7 +113,7 @@ struct {
 	__type(key, __u32);
 	__type(value, struct lb4_backend);
 	__uint(pinning, LIBBPF_PIN_BY_NAME);
-	__uint(max_entries, CILIUM_LB_MAP_MAX_ENTRIES);
+	__uint(max_entries, CILIUM_LB_BACKENDS_MAP_MAX_ENTRIES);
 	__uint(map_flags, CONDITIONAL_PREALLOC);
 } LB4_BACKEND_MAP_V2 __section_maps_btf;
 
@@ -123,7 +123,7 @@ struct {
 	__type(key, struct lb4_affinity_key);
 	__type(value, struct lb_affinity_val);
 	__uint(pinning, LIBBPF_PIN_BY_NAME);
-	__uint(max_entries, CILIUM_LB_MAP_MAX_ENTRIES);
+	__uint(max_entries, CILIUM_LB_AFFINITY_MAP_MAX_ENTRIES);
 } LB4_AFFINITY_MAP __section_maps_btf;
 #endif
 
@@ -144,7 +144,7 @@ struct {
 	__type(key, __sock_cookie);
 	__type(value, struct lb4_health);
 	__uint(pinning, LIBBPF_PIN_BY_NAME);
-	__uint(max_entries, CILIUM_LB_MAP_MAX_ENTRIES);
+	__uint(max_entries, CILIUM_LB_BACKENDS_MAP_MAX_ENTRIES);
 } LB4_HEALTH_MAP __section_maps_btf;
 #endif
 
@@ -154,7 +154,7 @@ struct {
 	__type(key, __u16);
 	__type(value, __u32);
 	__uint(pinning, LIBBPF_PIN_BY_NAME);
-	__uint(max_entries, CILIUM_LB_MAP_MAX_ENTRIES);
+	__uint(max_entries, CILIUM_LB_MAGLEV_MAP_MAX_ENTRIES);
 	__uint(map_flags, CONDITIONAL_PREALLOC);
 	/* Maglev inner map definition */
 	__array(values, struct {
@@ -173,7 +173,7 @@ struct {
 	__type(key, struct lb_affinity_match);
 	__type(value, __u8);
 	__uint(pinning, LIBBPF_PIN_BY_NAME);
-	__uint(max_entries, CILIUM_LB_MAP_MAX_ENTRIES);
+	__uint(max_entries, CILIUM_LB_AFFINITY_MAP_MAX_ENTRIES);
 	__uint(map_flags, CONDITIONAL_PREALLOC);
 } LB_AFFINITY_MATCH_MAP __section_maps_btf;
 #endif
@@ -312,9 +312,29 @@ bool lb6_svc_is_routable(const struct lb6_service *svc)
 }
 
 static __always_inline
-bool lb4_svc_is_localredirect(const struct lb4_service *svc __maybe_unused)
+bool lb4_svc_is_localredirect(const struct lb4_service *svc)
 {
 	return svc->flags2 & SVC_FLAG_LOCALREDIRECT;
+}
+
+static __always_inline
+bool lb4_svc_is_l7loadbalancer(const struct lb4_service *svc __maybe_unused)
+{
+#ifdef ENABLE_L7_LB
+	return svc->flags2 & SVC_FLAG_L7LOADBALANCER;
+#else
+	return false;
+#endif
+}
+
+static __always_inline
+bool lb6_svc_is_l7loadbalancer(const struct lb6_service *svc __maybe_unused)
+{
+#ifdef ENABLE_L7_LB
+	return svc->flags2 & SVC_FLAG_L7LOADBALANCER;
+#else
+	return false;
+#endif
 }
 
 static __always_inline int extract_l4_port(struct __ctx_buff *ctx, __u8 nexthdr,
@@ -541,10 +561,11 @@ struct lb6_service *lb6_lookup_service(struct lb6_key *key,
 	svc = map_lookup_elem(&LB6_SERVICES_MAP_V2, key);
 	if (svc) {
 		if (!scope_switch || !lb6_svc_is_local_scope(svc))
-			return svc->count ? svc : NULL;
+			/* Packets for L7 LB are redirected even when there are no backends. */
+			return (svc->count || lb6_svc_is_l7loadbalancer(svc)) ? svc : NULL;
 		key->scope = LB_LOOKUP_SCOPE_INT;
 		svc = map_lookup_elem(&LB6_SERVICES_MAP_V2, key);
-		if (svc && svc->count)
+		if (svc && (svc->count || lb6_svc_is_l7loadbalancer(svc)))
 			return svc;
 	}
 
@@ -822,7 +843,7 @@ static __always_inline int lb6_local(const void *map, struct __ctx_buff *ctx,
 		state->backend_id = backend_id;
 		state->rev_nat_index = svc->rev_nat_index;
 
-		ret = ct_create6(map, NULL, tuple, ctx, CT_SERVICE, state, false);
+		ret = ct_create6(map, NULL, tuple, ctx, CT_SERVICE, state, false, false);
 		/* Fail closed, if the conntrack entry create fails drop
 		 * service lookup.
 		 */
@@ -909,8 +930,10 @@ drop_no_service:
  * lose the updated tuple daddr in that case.
  */
 static __always_inline void lb6_ctx_store_state(struct __ctx_buff *ctx,
-						const struct ct_state *state)
+						const struct ct_state *state,
+					       __u16 proxy_port)
 {
+	ctx_store_meta(ctx, CB_PROXY_MAGIC, (__u32)proxy_port << 16);
 	ctx_store_meta(ctx, CB_BACKEND_ID, state->backend_id);
 	ctx_store_meta(ctx, CB_CT_STATE, (__u32)state->rev_nat_index);
 }
@@ -921,7 +944,8 @@ static __always_inline void lb6_ctx_store_state(struct __ctx_buff *ctx,
  * the packet.
  */
 static __always_inline void lb6_ctx_restore_state(struct __ctx_buff *ctx,
-						  struct ct_state *state)
+						  struct ct_state *state,
+						 __u16 *proxy_port)
 {
 	state->rev_nat_index = (__u16)ctx_load_meta(ctx, CB_CT_STATE);
 	/* Clear to not leak state to later stages of the datapath. */
@@ -932,6 +956,9 @@ static __always_inline void lb6_ctx_restore_state(struct __ctx_buff *ctx,
 	state->backend_id = ctx_load_meta(ctx, CB_BACKEND_ID);
 	/* Must clear to avoid policy bypass as CB_BACKEND_ID aliases CB_POLICY. */
 	ctx_store_meta(ctx, CB_BACKEND_ID, 0);
+
+	*proxy_port = ctx_load_meta(ctx, CB_PROXY_MAGIC) >> 16;
+	ctx_store_meta(ctx, CB_PROXY_MAGIC, 0);
 }
 
 #else
@@ -1154,10 +1181,12 @@ struct lb4_service *lb4_lookup_service(struct lb4_key *key,
 	svc = map_lookup_elem(&LB4_SERVICES_MAP_V2, key);
 	if (svc) {
 		if (!scope_switch || !lb4_svc_is_local_scope(svc))
-			return svc->count || lb4_to_lb6_service(svc) ? svc : NULL;
+			/* Packets for L7 LB are redirected even when there are no backends. */
+			return (svc->count || lb4_to_lb6_service(svc) ||
+				lb4_svc_is_l7loadbalancer(svc)) ? svc : NULL;
 		key->scope = LB_LOOKUP_SCOPE_INT;
 		svc = map_lookup_elem(&LB4_SERVICES_MAP_V2, key);
-		if (svc && svc->count)
+		if (svc && (svc->count || lb4_svc_is_l7loadbalancer(svc)))
 			return svc;
 	}
 
@@ -1459,7 +1488,7 @@ static __always_inline int lb4_local(const void *map, struct __ctx_buff *ctx,
 		state->backend_id = backend_id;
 		state->rev_nat_index = svc->rev_nat_index;
 
-		ret = ct_create4(map, NULL, tuple, ctx, CT_SERVICE, state, false);
+		ret = ct_create4(map, NULL, tuple, ctx, CT_SERVICE, state, false, false);
 		/* Fail closed, if the conntrack entry create fails drop
 		 * service lookup.
 		 */
@@ -1577,8 +1606,10 @@ drop_no_service:
  * lose the updated tuple daddr in that case.
  */
 static __always_inline void lb4_ctx_store_state(struct __ctx_buff *ctx,
-						const struct ct_state *state)
+						const struct ct_state *state,
+					       __u16 proxy_port)
 {
+	ctx_store_meta(ctx, CB_PROXY_MAGIC, (__u32)proxy_port << 16);
 	ctx_store_meta(ctx, CB_BACKEND_ID, state->backend_id);
 	ctx_store_meta(ctx, CB_CT_STATE, (__u32)state->rev_nat_index << 16 |
 		       state->loopback);
@@ -1591,7 +1622,8 @@ static __always_inline void lb4_ctx_store_state(struct __ctx_buff *ctx,
  */
 static __always_inline void lb4_ctx_restore_state(struct __ctx_buff *ctx,
 						  struct ct_state *state,
-						  const struct ipv4_ct_tuple *tuple  __maybe_unused)
+						  const struct ipv4_ct_tuple *tuple  __maybe_unused,
+						 __u16 *proxy_port)
 {
 	__u32 meta = ctx_load_meta(ctx, CB_CT_STATE);
 #ifndef DISABLE_LOOPBACK_LB
@@ -1609,6 +1641,9 @@ static __always_inline void lb4_ctx_restore_state(struct __ctx_buff *ctx,
 	state->backend_id = ctx_load_meta(ctx, CB_BACKEND_ID);
 	/* must clear to avoid policy bypass as CB_BACKEND_ID aliases CB_POLICY. */
 	ctx_store_meta(ctx, CB_BACKEND_ID, 0);
+
+	*proxy_port = ctx_load_meta(ctx, CB_PROXY_MAGIC) >> 16;
+	ctx_store_meta(ctx, CB_PROXY_MAGIC, 0);
 }
 #endif /* ENABLE_IPV4 */
 #endif /* __LB_H_ */

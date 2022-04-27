@@ -7,10 +7,12 @@ import (
 	"time"
 
 	"github.com/spf13/viper"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/cilium/cilium/pkg/command"
 	"github.com/cilium/cilium/pkg/logging"
 	"github.com/cilium/cilium/pkg/logging/logfields"
+	"github.com/cilium/cilium/pkg/option"
 )
 
 var log = logging.DefaultLogger.WithField(logfields.LogSubsys, "option")
@@ -114,6 +116,9 @@ const (
 	// IPAMSubnetsTags are optional tags used to filter subnets, and interfaces within those subnets
 	IPAMSubnetsTags = "subnet-tags-filter"
 
+	// IPAMInstanceTagFilter are optional tags used to filter instances for ENI discovery ; only used with AWS IPAM mode for now
+	IPAMInstanceTags = "instance-tags-filter"
+
 	// ClusterPoolIPv4CIDR is the cluster's IPv4 CIDR to allocate
 	// individual PodCIDR ranges from when using the ClusterPool ipam mode.
 	ClusterPoolIPv4CIDR = "cluster-pool-ipv4-cidr"
@@ -211,6 +216,29 @@ const (
 
 	// CESSlicingMode instructs how CEPs are grouped in a CES.
 	CESSlicingMode = "ces-slice-mode"
+
+	// EnableIngressController enables cilium ingress controller
+	// This must be enabled along with enable-envoy-config in cilium agent.
+	EnableIngressController = "enable-ingress-controller"
+
+	// EnforceIngressHttps enforces https for host having matching TLS host in Ingress.
+	// Incoming traffic to http listener will return 308 http error code with respective location in header.
+	EnforceIngressHttps = "enforce-ingress-https"
+
+	// CiliumK8sNamespace is the namespace where Cilium pods are running.
+	CiliumK8sNamespace = "cilium-pod-namespace"
+
+	// CiliumPodLabels specifies the pod labels that Cilium pods is running
+	// with.
+	CiliumPodLabels = "cilium-pod-labels"
+
+	// RemoveCiliumNodeTaints is the flag to define if the Cilium node taint
+	// should be removed in Kubernetes nodes.
+	RemoveCiliumNodeTaints = "remove-cilium-node-taints"
+
+	// SetCiliumIsUpCondition sets the CiliumIsUp node condition in Kubernetes
+	// nodes.
+	SetCiliumIsUpCondition = "set-cilium-is-up-condition"
 )
 
 // OperatorConfig is the configuration used by the operator.
@@ -303,6 +331,9 @@ type OperatorConfig struct {
 	// IPAMSubnetsTags are optional tags used to filter subnets, and interfaces within those subnets
 	IPAMSubnetsTags map[string]string
 
+	// IPAMUInstanceTags are optional tags used to filter AWS EC2 instances, and interfaces (ENI) attached to them
+	IPAMInstanceTags map[string]string
+
 	// IPAM Operator options
 
 	// ClusterPoolIPv4CIDR is the cluster IPv4 podCIDR that should be used to
@@ -390,6 +421,27 @@ type OperatorConfig struct {
 
 	// CESSlicingMode instructs how CEPs are grouped in a CES.
 	CESSlicingMode string
+
+	// EnableIngressController enables cilium ingress controller
+	EnableIngressController bool
+
+	// EnforceIngressHTTPS enforces https if required
+	EnforceIngressHTTPS bool
+
+	// CiliumK8sNamespace is the namespace where Cilium pods are running.
+	CiliumK8sNamespace string
+
+	// CiliumPodLabels specifies the pod labels that Cilium pods is running
+	// with.
+	CiliumPodLabels string
+
+	// RemoveCiliumNodeTaints is the flag to define if the Cilium node taint
+	// should be removed in Kubernetes nodes.
+	RemoveCiliumNodeTaints bool
+
+	// SetCiliumIsUpCondition sets the CiliumIsUp node condition in Kubernetes
+	// nodes.
+	SetCiliumIsUpCondition bool
 }
 
 // Populate sets all options with the values from viper.
@@ -419,6 +471,20 @@ func (c *OperatorConfig) Populate() {
 	c.BGPAnnounceLBIP = viper.GetBool(BGPAnnounceLBIP)
 	c.BGPConfigPath = viper.GetString(BGPConfigPath)
 	c.SkipCRDCreation = viper.GetBool(SkipCRDCreation)
+	c.EnableIngressController = viper.GetBool(EnableIngressController)
+	c.EnforceIngressHTTPS = viper.GetBool(EnforceIngressHttps)
+	c.CiliumPodLabels = viper.GetString(CiliumPodLabels)
+	c.RemoveCiliumNodeTaints = viper.GetBool(RemoveCiliumNodeTaints)
+	c.SetCiliumIsUpCondition = viper.GetBool(SetCiliumIsUpCondition)
+
+	c.CiliumK8sNamespace = viper.GetString(CiliumK8sNamespace)
+	if c.CiliumK8sNamespace == "" {
+		if option.Config.K8sNamespace == "" {
+			c.CiliumK8sNamespace = metav1.NamespaceDefault
+		} else {
+			c.CiliumK8sNamespace = option.Config.K8sNamespace
+		}
+	}
 
 	if c.BGPAnnounceLBIP {
 		c.SyncK8sServices = true
@@ -462,6 +528,12 @@ func (c *OperatorConfig) Populate() {
 		c.IPAMSubnetsTags = m
 	}
 
+	if m, err := command.GetStringMapStringE(viper.GetViper(), IPAMInstanceTags); err != nil {
+		log.Fatalf("unable to parse %s: %s", IPAMInstanceTags, err)
+	} else {
+		c.IPAMInstanceTags = m
+	}
+
 	if m, err := command.GetStringMapStringE(viper.GetViper(), AWSInstanceLimitMapping); err != nil {
 		log.Fatalf("unable to parse %s: %s", AWSInstanceLimitMapping, err)
 	} else {
@@ -479,6 +551,7 @@ func (c *OperatorConfig) Populate() {
 var Config = &OperatorConfig{
 	IPAMSubnetsIDs:          make([]string, 0),
 	IPAMSubnetsTags:         make(map[string]string),
+	IPAMInstanceTags:        make(map[string]string),
 	AWSInstanceLimitMapping: make(map[string]string),
 	ENITags:                 make(map[string]string),
 }
