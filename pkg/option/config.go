@@ -646,9 +646,9 @@ const (
 	// K8sNamespaceName is the name of the K8sNamespace option
 	K8sNamespaceName = "k8s-namespace"
 
-	// AgentNotReadyNodeTaintPrefixName is the name of the option to set
-	// AgentNotReadyNodeTaintPrefix
-	AgentNotReadyNodeTaintPrefixName = "agent-not-ready-taint-prefix"
+	// AgentNotReadyNodeTaintKeyName is the name of the option to set
+	// AgentNotReadyNodeTaintKey
+	AgentNotReadyNodeTaintKeyName = "agent-not-ready-taint-key"
 
 	// JoinClusterName is the name of the JoinCluster Option
 	JoinClusterName = "join-cluster"
@@ -1526,7 +1526,7 @@ type DaemonConfig struct {
 	// scheduled. Once cilium is setup it is removed from the node. Mostly
 	// used in cloud providers to prevent existing CNI plugins from managing
 	// pods.
-	AgentNotReadyNodeTaintPrefix string
+	AgentNotReadyNodeTaintKey string
 
 	// JoinCluster is 'true' if the agent should join a Cilium cluster via kvstore
 	// registration
@@ -2452,8 +2452,8 @@ func (c *DaemonConfig) CiliumNamespaceName() string {
 // AgentNotReadyNodeTaintValue returns the value of the taint key that cilium agents
 // will manage on their nodes
 func (c *DaemonConfig) AgentNotReadyNodeTaintValue() string {
-	if c.AgentNotReadyNodeTaintPrefix != "" {
-		return c.AgentNotReadyNodeTaintPrefix + "cilium-agent-not-ready"
+	if c.AgentNotReadyNodeTaintKey != "" {
+		return c.AgentNotReadyNodeTaintKey
 	} else {
 		return "node." + ciliumio.CiliumK8sAnnotationPrefix + "agent-not-ready"
 	}
@@ -3146,7 +3146,7 @@ func (c *DaemonConfig) Populate() {
 	c.HTTP403Message = viper.GetString(HTTP403Message)
 	c.DisableEnvoyVersionCheck = viper.GetBool(DisableEnvoyVersionCheck)
 	c.K8sNamespace = viper.GetString(K8sNamespaceName)
-	c.AgentNotReadyNodeTaintPrefix = viper.GetString(AgentNotReadyNodeTaintPrefixName)
+	c.AgentNotReadyNodeTaintKey = viper.GetString(AgentNotReadyNodeTaintKeyName)
 	c.MaxControllerInterval = viper.GetInt(MaxCtrlIntervalName)
 	c.PolicyQueueSize = sanitizeIntParam(PolicyQueueSize, defaults.PolicyQueueSize)
 	c.EndpointQueueSize = sanitizeIntParam(EndpointQueueSize, defaults.EndpointQueueSize)
