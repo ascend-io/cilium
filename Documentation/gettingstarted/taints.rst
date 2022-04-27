@@ -45,6 +45,11 @@ node. The mechanism works as follows:
 3. From this point on, pods will start being scheduled and running on the node,
    having their networking managed by Cilium.
 
+The taint's key can also be overridden by passing a value to ``agent-not-ready-taint-key``.
+If the taint contains the prefix ``ignore-taint.cluster-autoscaler.kubernetes.io/``,
+the Cluster Autoscaler will ignore it when simulating scheduling, allowing the cluster
+to scale up from zero.
+
 The taint's effect should be chosen taking into account the following
 considerations:
 
