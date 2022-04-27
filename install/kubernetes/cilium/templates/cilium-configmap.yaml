@@ -881,4 +881,6 @@ data:
 {{- end }}
 {{- end }}
 
-  agent-not-ready-taint-key: {{ .Values.agentNotReadyTaintKey }}
+{{- if hasKey .Values "agentNotReadyTaintKey" }}
+  agent-not-ready-taint-key: {{ .Values.agentNotReadyTaintKey | quote }}
+{{- end }}
